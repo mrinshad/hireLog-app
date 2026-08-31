@@ -90,9 +90,10 @@ export const latexCompiler = {
 
     const base64Data = arrayBufferToBase64(compiledBuffer);
 
-    // Save PDF locally in structured directory
-    const dir = `${FileSystem.documentDirectory}resumes/${jobId}/`;
-    const targetFilePath = `${dir}${versionId}.pdf`;
+    // Save PDF locally in structured hireFlow directory
+    const dir = `${FileSystem.documentDirectory}hireFlow/resumes/`;
+    const safeJob = (jobId || 'application').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const targetFilePath = `${dir}${safeJob}_${versionId}.pdf`;
 
     try {
       const dirInfo = await FileSystem.getInfoAsync(dir);

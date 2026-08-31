@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import * as FileSystem from 'expo-file-system/legacy';
 import Feather from '@expo/vector-icons/Feather';
 
 import { AppHeader } from '@/components/common/AppHeader';
@@ -28,6 +29,7 @@ import { resumeRepository } from '@/database/repositories/resumeRepository';
 import { emailComposerService } from '@/services/email/emailComposerService';
 import { emailGenerator } from '@/services/gemini/emailGenerator';
 import { GeminiError } from '@/services/gemini/client';
+import { latexCompiler } from '@/services/latex/compiler';
 import { ResumeVersion } from '@/services/latex/types';
 import { matchingEngine } from '@/services/matching/matchingEngine';
 import { workflowOrchestrator } from '@/services/workflow/workflowOrchestrator';
@@ -51,6 +53,7 @@ export default function EmailComposerScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isCompilingPdf, setIsCompilingPdf] = useState(false);
   const [showSentPrompt, setShowSentPrompt] = useState(false);
   const [hasOpenedEmailApp, setHasOpenedEmailApp] = useState(false);
 
@@ -206,6 +209,71 @@ export default function EmailComposerScreen() {
     }
   };
 
+  const getOrCompilePdfPath = async (): Promise<string | null> => {
+    if (!latestResume) return null;
+
+    let targetPath = latestResume.pdfPath;
+    if (targetPath) {
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(targetPath);
+        if (fileInfo.exists) {
+          return targetPath;
+        }
+      } catch {
+        targetPath = null;
+      }
+    }
+
+    if (latestResume.latexSource && latestResume.latexSource.trim()) {
+      try {
+        setIsCompilingPdf(true);
+        AppToast.show('Compiling resume PDF for attachment...', 'info');
+        const compiled = await latexCompiler.compileToPdf(
+          latestResume.latexSource,
+          job?.company || job?.id || 'hireFlow',
+          `v${latestResume.versionNumber}`
+        );
+
+        targetPath = compiled.pdfPath;
+        await resumeRepository.updateResumePdf(latestResume.id, targetPath, 'Generated');
+
+        setLatestResume((prev) => (prev ? { ...prev, pdfPath: targetPath } : null));
+        return targetPath;
+      } catch (err) {
+        console.warn('Could not compile PDF for email attachment:', err);
+      } finally {
+        setIsCompilingPdf(false);
+      }
+    }
+
+    return null;
+  };
+
+  const handleCompileAndSavePdf = async () => {
+    if (!latestResume) return;
+    try {
+      setIsCompilingPdf(true);
+      AppToast.show('Saving PDF document to hireFlow folder...', 'info');
+      const compiled = await latexCompiler.compileToPdf(
+        latestResume.latexSource,
+        job?.company || job?.id || 'hireFlow',
+        `v${latestResume.versionNumber}`
+      );
+
+      await resumeRepository.updateResumePdf(latestResume.id, compiled.pdfPath, 'Generated');
+      setLatestResume((prev) => (prev ? { ...prev, pdfPath: compiled.pdfPath } : null));
+      AppToast.show('PDF saved to hireFlow/resumes/', 'success');
+    } catch (err: any) {
+      console.error('Error saving PDF:', err);
+      AppDialog.error(
+        'PDF Compilation Failed',
+        err.message || 'Could not compile PDF. Please verify internet connection.'
+      );
+    } finally {
+      setIsCompilingPdf(false);
+    }
+  };
+
   const handleOpenEmailApp = async () => {
     if (!job) return;
 
@@ -219,21 +287,8 @@ export default function EmailComposerScreen() {
       return;
     }
 
-    if (!latestResume?.pdfPath) {
-      AppDialog.show({
-        title: 'Resume Attachment Missing',
-        message: 'No compiled PDF resume found. Would you like to compile your resume first or proceed without attachment?',
-        type: 'warning',
-        buttons: [
-          { text: 'Compile Resume', style: 'default', onPress: () => router.push(`/jobs/resume/${job.id}`) },
-          { text: 'Send Without Resume', style: 'destructive', onPress: () => launchEmailIntent(null) },
-          { text: 'Cancel', style: 'cancel' },
-        ],
-      });
-      return;
-    }
-
-    await launchEmailIntent(latestResume.pdfPath);
+    const attachmentPath = await getOrCompilePdfPath();
+    await launchEmailIntent(attachmentPath);
   };
 
   const launchEmailIntent = async (attachmentPath: string | null) => {
@@ -416,26 +471,39 @@ export default function EmailComposerScreen() {
           {/* Attachment */}
           <Card style={styles.card}>
             <Text style={Typography.caption}>Attachment</Text>
-            {latestResume?.pdfPath ? (
+            {latestResume ? (
               <View style={styles.attachmentBox}>
                 <Feather name="file-text" size={IconSizes.md} color={Colors.primary} />
                 <View style={{ flex: 1 }}>
                   <Text style={Typography.itemTitle} numberOfLines={1}>
-                    {latestResume.targetRole || 'Resume'} (v{latestResume.versionNumber}.pdf)
+                    {latestResume.targetRole || job.role || 'Resume'} (v{latestResume.versionNumber})
                   </Text>
-                  <Text style={[Typography.caption, { color: Colors.successText }]}>
-                    Attached verified PDF
+                  <Text
+                    style={[
+                      Typography.caption,
+                      { color: latestResume.pdfPath ? Colors.successText : Colors.primary },
+                    ]}>
+                    {latestResume.pdfPath ? 'PDF ready in hireFlow' : 'Tailored resume attached'}
                   </Text>
                 </View>
+                {!latestResume.pdfPath && (
+                  <SecondaryButton
+                    title="Save PDF"
+                    icon="download"
+                    size="sm"
+                    loading={isCompilingPdf}
+                    onPress={handleCompileAndSavePdf}
+                  />
+                )}
               </View>
             ) : (
               <View style={styles.missingAttachmentBox}>
                 <Feather name="alert-circle" size={IconSizes.sm} color={Colors.warningText} />
                 <Text style={[Typography.caption, { color: Colors.warningText, flex: 1 }]}>
-                  No PDF resume compiled yet.
+                  No tailored resume created yet.
                 </Text>
                 <TouchableOpacity onPress={() => router.push(`/jobs/resume/${job.id}`)}>
-                  <Text style={styles.linkText}>Compile →</Text>
+                  <Text style={styles.linkText}>Create Resume →</Text>
                 </TouchableOpacity>
               </View>
             )}
