@@ -44,3 +44,6 @@ example
 
 *.keystore
 *.jks
+*.apk
+*.aab
+hirelog-production.apk
