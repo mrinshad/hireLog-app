@@ -11,14 +11,18 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Feather from '@expo/vector-icons/Feather';
 
+import { AppHeader } from '@/components/common/AppHeader';
+import { Card } from '@/components/common/Card';
+import { PrimaryButton } from '@/components/common/Buttons';
+import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
 import { settingsRepository } from '@/database/repositories/settingsRepository';
 
 export default function SettingsScreen() {
   const [apiKey, setApiKey] = useState('');
   const [compilerUrl, setCompilerUrl] = useState('');
   const [isSecure, setIsSecure] = useState(true);
-  const [isSaved, setIsSaved] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -41,9 +45,7 @@ export default function SettingsScreen() {
       setIsSaving(true);
       await settingsRepository.setGeminiApiKey(apiKey);
       await settingsRepository.setSetting('latex_compiler_url', compilerUrl.trim());
-      setIsSaved(true);
-      setTimeout(() => setIsSaved(false), 3000);
-      Alert.alert('Saved', 'Settings have been saved securely to local storage.');
+      Alert.alert('Saved', 'Settings updated.');
     } catch (error) {
       console.error('Failed to save settings:', error);
       Alert.alert('Error', 'Failed to save settings.');
@@ -57,123 +59,89 @@ export default function SettingsScreen() {
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Settings</Text>
-          <Text style={styles.subtitle}>App preferences and compiler configuration</Text>
-        </View>
+        <AppHeader title="Settings" subtitle="Preferences & Configuration" />
 
         <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
           {/* Gemini AI API Key Configuration */}
-          <View style={styles.card}>
+          <Card style={styles.card}>
             <View style={styles.cardHeaderRow}>
-              <View style={styles.iconCircle}>
-                <Text style={styles.icon}>✨</Text>
-              </View>
-              <View style={styles.cardTitleArea}>
-                <Text style={styles.cardTitle}>Gemini AI Configuration</Text>
-                <Text style={styles.cardSubtext}>
-                  Powers structured Job Description analysis and skills extraction.
-                </Text>
-              </View>
-            </View>
-
-            <View style={styles.statusRow}>
-              <Text style={styles.statusLabel}>API Key Status: </Text>
-              {apiKey.trim() ? (
-                <View style={styles.configuredBadge}>
-                  <Text style={styles.configuredText}>✓ Configured</Text>
-                </View>
-              ) : (
-                <View style={styles.missingBadge}>
-                  <Text style={styles.missingText}>⚠️ Not Configured</Text>
-                </View>
-              )}
+              <Feather name="cpu" size={IconSizes.md} color={Colors.primary} />
+              <Text style={Typography.sectionTitle}>Gemini AI API Key</Text>
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Gemini API Key</Text>
+              <Text style={Typography.caption}>API Key</Text>
               <View style={styles.inputRow}>
                 <TextInput
                   style={[styles.input, styles.inputFlex]}
                   placeholder="AIzaSy..."
-                  placeholderTextColor="#94A3B8"
+                  placeholderTextColor={Colors.textMuted}
                   autoCapitalize="none"
                   autoCorrect={false}
                   secureTextEntry={isSecure}
                   value={apiKey}
-                  onChangeText={(text) => {
-                    setApiKey(text);
-                    setIsSaved(false);
-                  }}
+                  onChangeText={setApiKey}
                 />
                 <TouchableOpacity
                   style={styles.toggleBtn}
                   onPress={() => setIsSecure(!isSecure)}>
-                  <Text style={styles.toggleText}>{isSecure ? 'Show' : 'Hide'}</Text>
+                  <Feather
+                    name={isSecure ? 'eye' : 'eye-off'}
+                    size={IconSizes.sm}
+                    color={Colors.textSecondary}
+                  />
                 </TouchableOpacity>
               </View>
-              <Text style={styles.hint}>
-                Stored securely on-device and only sent directly to Google Gemini API.
+              <Text style={Typography.caption}>
+                Used exclusively for structured JD parsing on explicit request.
               </Text>
             </View>
-          </View>
+          </Card>
 
           {/* LaTeX Compiler Configuration */}
-          <View style={styles.card}>
+          <Card style={styles.card}>
             <View style={styles.cardHeaderRow}>
-              <View style={styles.iconCircle}>
-                <Text style={styles.icon}>📄</Text>
-              </View>
-              <View style={styles.cardTitleArea}>
-                <Text style={styles.cardTitle}>LaTeX Compiler Service</Text>
-                <Text style={styles.cardSubtext}>
-                  Compiles generated .tex resumes into PDF documents.
-                </Text>
-              </View>
+              <Feather name="file-text" size={IconSizes.md} color={Colors.primary} />
+              <Text style={Typography.sectionTitle}>LaTeX Compiler</Text>
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Compiler Service URL (Optional)</Text>
+              <Text style={Typography.caption}>Compiler Service URL</Text>
               <TextInput
                 style={styles.input}
                 placeholder="https://latexonline.cc/compile (default)"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={Colors.textMuted}
                 autoCapitalize="none"
                 autoCorrect={false}
                 value={compilerUrl}
-                onChangeText={(text) => {
-                  setCompilerUrl(text);
-                  setIsSaved(false);
-                }}
+                onChangeText={setCompilerUrl}
               />
-              <Text style={styles.hint}>
-                Leave blank to use the default LaTeX compilation service or enter your local/private compiler endpoint (e.g. http://localhost:3000/compile).
+              <Text style={Typography.caption}>
+                Leave blank for default service, or enter your local endpoint.
               </Text>
             </View>
-          </View>
+          </Card>
 
-          {/* Save Action */}
-          <TouchableOpacity
-            style={[styles.saveBtn, isSaving && styles.saveBtnDisabled]}
+          {/* Save Button */}
+          <PrimaryButton
+            title="Save Settings"
+            icon="check"
+            loading={isSaving}
+            size="lg"
             onPress={handleSaveSettings}
-            disabled={isSaving}>
-            <Text style={styles.saveBtnText}>
-              {isSaving ? 'Saving...' : isSaved ? '✓ Saved' : 'Save Settings'}
-            </Text>
-          </TouchableOpacity>
+            style={styles.saveBtn}
+          />
 
-          {/* Privacy & Truth Notice */}
+          {/* Privacy Note */}
           <View style={styles.infoCard}>
-            <Text style={styles.infoTitle}>🔒 Local Storage & Privacy Principle</Text>
+            <Feather name="shield" size={IconSizes.sm} color={Colors.primary} />
             <Text style={styles.infoText}>
-              HireLog preserves your verified Profile as the immutable single source of truth. All generated resumes and PDFs remain stored locally on your device.
+              All profile data, resumes, drafts, and settings remain stored on-device.
             </Text>
           </View>
 
-          {/* App Info Footer */}
           <View style={styles.footer}>
-            <Text style={styles.footerText}>HireLog v1.0.0 • Local-first Career Tool</Text>
+            <Text style={Typography.caption}>HireLog v1.0.0 • Local-First</Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -184,196 +152,78 @@ export default function SettingsScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Colors.background,
   },
   keyboardView: {
     flex: 1,
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#0F172A',
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#64748B',
-    marginTop: 2,
   },
   container: {
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 32,
+    padding: Spacing.lg,
+    paddingBottom: Spacing.xxxl,
   },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 16,
-    marginBottom: 16,
+    marginBottom: Spacing.lg,
   },
   cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 14,
-  },
-  iconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#EFF6FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  icon: {
-    fontSize: 20,
-  },
-  cardTitleArea: {
-    flex: 1,
-  },
-  cardTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  cardSubtext: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
-    lineHeight: 16,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-    padding: 10,
-    borderRadius: 8,
-    marginBottom: 14,
-  },
-  statusLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  configuredBadge: {
-    backgroundColor: '#DCFCE7',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  configuredText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#16A34A',
-  },
-  missingBadge: {
-    backgroundColor: '#FEF3C7',
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  missingText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#D97706',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
   },
   inputGroup: {
-    marginBottom: 10,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#334155',
-    marginBottom: 6,
+    gap: Spacing.xs,
   },
   inputRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: Spacing.sm,
   },
   input: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Colors.surfaceSubtle,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
     fontSize: 14,
-    color: '#0F172A',
+    color: Colors.textPrimary,
   },
   inputFlex: {
     flex: 1,
   },
   toggleBtn: {
-    backgroundColor: '#F1F5F9',
+    backgroundColor: Colors.surfaceSubtle,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 10,
-    paddingHorizontal: 12,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  toggleText: {
-    fontSize: 13,
-    color: '#475569',
-    fontWeight: '600',
-  },
-  hint: {
-    fontSize: 11,
-    color: '#94A3B8',
-    marginTop: 6,
-    lineHeight: 16,
-  },
   saveBtn: {
-    backgroundColor: '#2563EB',
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  saveBtnDisabled: {
-    opacity: 0.6,
-  },
-  saveBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.xl,
   },
   infoCard: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primaryLight,
+    borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: '#DBEAFE',
-    padding: 14,
-    marginBottom: 24,
-  },
-  infoTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1E40AF',
-    marginBottom: 4,
+    borderColor: Colors.primaryBorder,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+    marginBottom: Spacing.xl,
   },
   infoText: {
     fontSize: 12,
-    color: '#2563EB',
-    lineHeight: 18,
+    color: Colors.primaryDark,
+    flex: 1,
+    lineHeight: 16,
   },
   footer: {
     alignItems: 'center',
-  },
-  footerText: {
-    fontSize: 12,
-    color: '#94A3B8',
   },
 });

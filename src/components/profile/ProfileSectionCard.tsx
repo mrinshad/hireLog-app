@@ -1,9 +1,12 @@
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import Feather from '@expo/vector-icons/Feather';
+
+import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
 
 interface ProfileSectionCardProps {
   title: string;
-  icon: string;
+  icon: keyof typeof Feather.glyphMap;
   summary: string;
   itemCount?: number;
   onEdit: () => void;
@@ -23,18 +26,18 @@ export function ProfileSectionCard({
       <View style={styles.headerRow}>
         <View style={styles.titleContainer}>
           <View style={styles.iconCircle}>
-            <Text style={styles.iconText}>{icon}</Text>
+            <Feather name={icon} size={IconSizes.md} color={Colors.primary} />
           </View>
           <View style={styles.textContainer}>
             <View style={styles.nameRow}>
-              <Text style={styles.title}>{title}</Text>
+              <Text style={Typography.itemTitle}>{title}</Text>
               {typeof itemCount === 'number' && (
                 <View style={styles.countBadge}>
                   <Text style={styles.countText}>{itemCount}</Text>
                 </View>
               )}
             </View>
-            <Text style={styles.summary} numberOfLines={2}>
+            <Text style={Typography.supporting} numberOfLines={2}>
               {summary || 'Not provided yet'}
             </Text>
           </View>
@@ -46,6 +49,7 @@ export function ProfileSectionCard({
           activeOpacity={0.7}
           accessibilityRole="button"
           accessibilityLabel={`${actionLabel} ${title}`}>
+          <Feather name="edit-2" size={12} color={Colors.primary} />
           <Text style={styles.editButtonText}>{actionLabel}</Text>
         </TouchableOpacity>
       </View>
@@ -55,12 +59,12 @@ export function ProfileSectionCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    padding: 16,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.lg,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
-    marginBottom: 12,
+    borderColor: Colors.border,
+    marginBottom: Spacing.sm,
   },
   headerRow: {
     flexDirection: 'row',
@@ -71,19 +75,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    marginRight: 12,
+    marginRight: Spacing.md,
   },
   iconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#F1F5F9',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.primaryLight,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
-  },
-  iconText: {
-    fontSize: 18,
+    marginRight: Spacing.md,
   },
   textContainer: {
     flex: 1,
@@ -91,43 +92,33 @@ const styles = StyleSheet.create({
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
+    gap: Spacing.sm,
   },
   countBadge: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 8,
+    backgroundColor: Colors.surfaceSubtle,
+    paddingHorizontal: 6,
     paddingVertical: 2,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
+    borderRadius: Radius.sm,
   },
   countText: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#2563EB',
-  },
-  summary: {
-    fontSize: 13,
-    color: '#64748B',
-    marginTop: 2,
-    lineHeight: 18,
+    color: Colors.textSecondary,
   },
   editButton: {
-    backgroundColor: '#F8FAFC',
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceSubtle,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 8,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
+    borderRadius: Radius.md,
+    gap: 4,
   },
   editButtonText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#2563EB',
+    color: Colors.primary,
   },
 });

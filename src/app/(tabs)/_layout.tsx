@@ -1,6 +1,8 @@
 import React from 'react';
 import { Tabs } from 'expo-router';
-import { Text } from 'react-native';
+import Feather from '@expo/vector-icons/Feather';
+
+import { Colors, IconSizes } from '@/constants/theme';
 
 export default function TabLayout() {
   return (
@@ -8,18 +10,18 @@ export default function TabLayout() {
       backBehavior="initialRoute"
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#2563EB',
-        tabBarInactiveTintColor: '#64748B',
+        tabBarActiveTintColor: Colors.primary,
+        tabBarInactiveTintColor: Colors.textMuted,
         tabBarStyle: {
-          backgroundColor: '#FFFFFF',
-          borderTopColor: '#E2E8F0',
+          backgroundColor: Colors.surface,
+          borderTopColor: Colors.border,
           borderTopWidth: 1,
           height: 60,
           paddingBottom: 8,
           paddingTop: 8,
         },
         tabBarLabelStyle: {
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: '600',
         },
       }}>
@@ -27,8 +29,8 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 18, color }}>⌂</Text>
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="home" size={size || IconSizes.md} color={color} />
           ),
         }}
       />
@@ -36,8 +38,17 @@ export default function TabLayout() {
         name="jobs"
         options={{
           title: 'Jobs',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 18, color }}>💼</Text>
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="briefcase" size={size || IconSizes.md} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="resumes"
+        options={{
+          title: 'Resumes',
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="file-text" size={size || IconSizes.md} color={color} />
           ),
         }}
       />
@@ -45,8 +56,8 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 18, color }}>👤</Text>
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="user" size={size || IconSizes.md} color={color} />
           ),
         }}
       />
@@ -54,8 +65,8 @@ export default function TabLayout() {
         name="settings"
         options={{
           title: 'Settings',
-          tabBarIcon: ({ color }) => (
-            <Text style={{ fontSize: 18, color }}>⚙</Text>
+          tabBarIcon: ({ color, size }) => (
+            <Feather name="settings" size={size || IconSizes.md} color={color} />
           ),
         }}
       />

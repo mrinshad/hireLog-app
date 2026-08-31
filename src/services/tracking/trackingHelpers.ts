@@ -1,62 +1,93 @@
 import { JobStatus } from '@/types/job';
+import { Colors } from '@/constants/theme';
+
+export type FeatherIconName =
+  | 'edit-2'
+  | 'check'
+  | 'send'
+  | 'calendar'
+  | 'award'
+  | 'x-circle'
+  | 'slash'
+  | 'file-text'
+  | 'briefcase'
+  | 'user'
+  | 'settings'
+  | 'trash-2'
+  | 'plus'
+  | 'search'
+  | 'arrow-left'
+  | 'chevron-right'
+  | 'share-2'
+  | 'eye'
+  | 'copy'
+  | 'mail';
 
 export interface StatusStyle {
   bg: string;
   text: string;
   border: string;
   label: string;
+  featherIcon: FeatherIconName;
   icon: string;
 }
 
 export const STATUS_CONFIG: Record<JobStatus, StatusStyle> = {
   Draft: {
-    bg: '#F1F5F9',
-    text: '#475569',
-    border: '#CBD5E1',
+    bg: Colors.neutralBg,
+    text: Colors.neutralText,
+    border: Colors.neutralBorder,
     label: 'Draft',
-    icon: '📝',
+    featherIcon: 'edit-2',
+    icon: 'edit-2',
   },
   Ready: {
-    bg: '#EFF6FF',
-    text: '#2563EB',
-    border: '#BFDBFE',
+    bg: Colors.warningBg,
+    text: Colors.warningText,
+    border: Colors.warningBorder,
     label: 'Ready',
-    icon: '✨',
+    featherIcon: 'check',
+    icon: 'check',
   },
   Applied: {
-    bg: '#F0F9FF',
-    text: '#0284C7',
-    border: '#BAE6FD',
+    bg: Colors.primaryLight,
+    text: Colors.primaryDark,
+    border: Colors.primaryBorder,
     label: 'Applied',
-    icon: '🚀',
+    featherIcon: 'send',
+    icon: 'send',
   },
   Interview: {
-    bg: '#F5F3FF',
-    text: '#7C3AED',
-    border: '#DDD6FE',
+    bg: Colors.infoBg,
+    text: Colors.infoText,
+    border: Colors.infoBorder,
     label: 'Interview',
-    icon: '🎯',
+    featherIcon: 'calendar',
+    icon: 'calendar',
   },
   Offer: {
-    bg: '#ECFDF5',
-    text: '#059669',
-    border: '#A7F3D0',
+    bg: Colors.successBg,
+    text: Colors.successText,
+    border: Colors.successBorder,
     label: 'Offer',
-    icon: '🎉',
+    featherIcon: 'award',
+    icon: 'award',
   },
   Rejected: {
-    bg: '#FFF1F2',
-    text: '#E11D48',
-    border: '#FECDD3',
+    bg: Colors.errorBg,
+    text: Colors.errorText,
+    border: Colors.errorBorder,
     label: 'Rejected',
-    icon: '✕',
+    featherIcon: 'x-circle',
+    icon: 'x-circle',
   },
   Withdrawn: {
-    bg: '#F8FAFC',
-    text: '#64748B',
-    border: '#E2E8F0',
+    bg: Colors.slateBg,
+    text: Colors.slateText,
+    border: Colors.slateBorder,
     label: 'Withdrawn',
-    icon: '⏹',
+    featherIcon: 'slash',
+    icon: 'slash',
   },
 };
 

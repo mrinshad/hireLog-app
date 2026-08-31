@@ -13,6 +13,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 
+import { AppHeader } from '@/components/common/AppHeader';
+import { Card } from '@/components/common/Card';
+import { PrimaryButton } from '@/components/common/Buttons';
+import { Colors, Radius, Spacing, Typography } from '@/constants/theme';
 import { jobRepository } from '@/database/repositories/jobRepository';
 import { JOB_STATUSES, JobStatus } from '@/types/job';
 
@@ -47,7 +51,7 @@ export default function NewJobScreen() {
       sourceUrl.trim() &&
       !/^https?:\/\/.+/i.test(sourceUrl.trim())
     ) {
-      newErrors.sourceUrl = 'Please enter a valid URL (starting with http:// or https://).';
+      newErrors.sourceUrl = 'Please enter a valid URL.';
     }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -83,39 +87,36 @@ export default function NewJobScreen() {
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={styles.backText}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>New Application</Text>
-          <TouchableOpacity
-            onPress={handleSave}
-            disabled={isSaving}
-            style={[styles.saveBtn, isSaving && styles.saveBtnDisabled]}>
-            <Text style={styles.saveText}>{isSaving ? 'Saving...' : 'Save'}</Text>
-          </TouchableOpacity>
-        </View>
+        <AppHeader
+          title="New Application"
+          showBack
+          rightAction={
+            <PrimaryButton
+              title="Save"
+              icon="check"
+              size="sm"
+              loading={isSaving}
+              onPress={handleSave}
+            />
+          }
+        />
 
         <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
           {/* Focal Input: Job Description */}
-          <View style={styles.sectionCard}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>
+          <Card style={styles.card}>
+            <View style={styles.rowBetween}>
+              <Text style={Typography.sectionTitle}>
                 Job Description <Text style={styles.required}>*</Text>
               </Text>
-              <Text style={styles.charCount}>{jobDescription.length} chars</Text>
+              <Text style={Typography.caption}>{jobDescription.length} chars</Text>
             </View>
-            <Text style={styles.fieldHint}>
-              Paste the complete, raw Job Description. HireLog preserves it verbatim for JD matching.
-            </Text>
             <TextInput
               style={[
                 styles.textArea,
                 errors.jobDescription ? styles.inputError : null,
               ]}
-              placeholder="Paste full Job Description here..."
-              placeholderTextColor="#94A3B8"
+              placeholder="Paste complete Job Description here..."
+              placeholderTextColor={Colors.textMuted}
               multiline
               textAlignVertical="top"
               value={jobDescription}
@@ -127,11 +128,11 @@ export default function NewJobScreen() {
             {errors.jobDescription ? (
               <Text style={styles.errorText}>{errors.jobDescription}</Text>
             ) : null}
-          </View>
+          </Card>
 
           {/* Job Status Selector */}
-          <View style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Application Status</Text>
+          <Card style={styles.card}>
+            <Text style={Typography.sectionTitle}>Application Status</Text>
             <View style={styles.statusChips}>
               {JOB_STATUSES.map((st) => (
                 <TouchableOpacity
@@ -144,54 +145,51 @@ export default function NewJobScreen() {
                 </TouchableOpacity>
               ))}
             </View>
-          </View>
+          </Card>
 
-          {/* Optional Details Card */}
-          <View style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Role & Company Details (Optional)</Text>
-            <Text style={styles.fieldHint}>
-              You can specify these now or edit them anytime later.
-            </Text>
+          {/* Details Card */}
+          <Card style={styles.card}>
+            <Text style={Typography.sectionTitle}>Details (Optional)</Text>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Job Title / Role</Text>
+              <Text style={Typography.caption}>Role / Job Title</Text>
               <TextInput
                 style={styles.input}
                 placeholder="e.g. Senior Frontend Engineer"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor={Colors.textMuted}
                 value={role}
                 onChangeText={setRole}
               />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Company</Text>
+              <Text style={Typography.caption}>Company</Text>
               <TextInput
                 style={styles.input}
-                placeholder="e.g. Stripe, Google, Acme Corp"
-                placeholderTextColor="#94A3B8"
+                placeholder="e.g. Acme Corp"
+                placeholderTextColor={Colors.textMuted}
                 value={company}
                 onChangeText={setCompany}
               />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Location / Work Mode</Text>
+              <Text style={Typography.caption}>Location</Text>
               <TextInput
                 style={styles.input}
-                placeholder="e.g. Remote, San Francisco, CA"
-                placeholderTextColor="#94A3B8"
+                placeholder="e.g. Remote, San Francisco"
+                placeholderTextColor={Colors.textMuted}
                 value={location}
                 onChangeText={setLocation}
               />
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Application Email</Text>
+              <Text style={Typography.caption}>Application Email</Text>
               <TextInput
                 style={[styles.input, errors.applicationEmail && styles.inputError]}
-                placeholder="e.g. jobs@company.com"
-                placeholderTextColor="#94A3B8"
+                placeholder="e.g. careers@company.com"
+                placeholderTextColor={Colors.textMuted}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 value={applicationEmail}
@@ -206,11 +204,11 @@ export default function NewJobScreen() {
             </View>
 
             <View style={styles.inputGroup}>
-              <Text style={styles.label}>Salary / Compensation</Text>
+              <Text style={Typography.caption}>Salary</Text>
               <TextInput
                 style={styles.input}
-                placeholder="e.g. $140,000 - $170,000"
-                placeholderTextColor="#94A3B8"
+                placeholder="e.g. $140,000"
+                placeholderTextColor={Colors.textMuted}
                 value={salary}
                 onChangeText={setSalary}
               />
@@ -218,22 +216,22 @@ export default function NewJobScreen() {
 
             <View style={styles.row}>
               <View style={[styles.inputGroup, styles.col]}>
-                <Text style={styles.label}>Source</Text>
+                <Text style={Typography.caption}>Source</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="e.g. LinkedIn, Indeed"
-                  placeholderTextColor="#94A3B8"
+                  placeholder="e.g. LinkedIn"
+                  placeholderTextColor={Colors.textMuted}
                   value={source}
                   onChangeText={setSource}
                 />
               </View>
 
               <View style={[styles.inputGroup, styles.col]}>
-                <Text style={styles.label}>Source URL</Text>
+                <Text style={Typography.caption}>Source URL</Text>
                 <TextInput
                   style={[styles.input, errors.sourceUrl && styles.inputError]}
-                  placeholder="e.g. https://..."
-                  placeholderTextColor="#94A3B8"
+                  placeholder="https://..."
+                  placeholderTextColor={Colors.textMuted}
                   autoCapitalize="none"
                   value={sourceUrl}
                   onChangeText={(text) => {
@@ -244,15 +242,16 @@ export default function NewJobScreen() {
               </View>
             </View>
             {errors.sourceUrl ? <Text style={styles.errorText}>{errors.sourceUrl}</Text> : null}
-          </View>
+          </Card>
 
-          {/* Bottom Save Action */}
-          <TouchableOpacity
-            style={[styles.bottomSaveBtn, isSaving && styles.saveBtnDisabled]}
+          <PrimaryButton
+            title="Save Application"
+            icon="check"
+            loading={isSaving}
+            size="lg"
             onPress={handleSave}
-            disabled={isSaving}>
-            <Text style={styles.bottomSaveText}>{isSaving ? 'Saving Job...' : 'Save Application'}</Text>
-          </TouchableOpacity>
+            style={styles.bottomBtn}
+          />
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -262,171 +261,99 @@ export default function NewJobScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Colors.background,
   },
   keyboardView: {
     flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  headerTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  backBtn: {
-    padding: 6,
-  },
-  backText: {
-    fontSize: 15,
-    color: '#2563EB',
-    fontWeight: '600',
-  },
-  saveBtn: {
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: 8,
-  },
-  saveBtnDisabled: {
-    opacity: 0.6,
-  },
-  saveText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFFFFF',
   },
   container: {
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
+    padding: Spacing.lg,
+    paddingBottom: Spacing.xxxl,
   },
-  sectionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 16,
-    marginBottom: 16,
+  card: {
+    marginBottom: Spacing.lg,
   },
-  sectionHeaderRow: {
+  rowBetween: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: Spacing.sm,
   },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 4,
-  },
-  charCount: {
-    fontSize: 12,
-    color: '#94A3B8',
-  },
-  fieldHint: {
-    fontSize: 13,
-    color: '#64748B',
-    marginBottom: 12,
-    lineHeight: 18,
+  required: {
+    color: Colors.error,
   },
   textArea: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Colors.surfaceSubtle,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
     fontSize: 14,
-    color: '#0F172A',
-    minHeight: 180,
+    color: Colors.textPrimary,
+    minHeight: 160,
     lineHeight: 20,
   },
   inputGroup: {
-    marginBottom: 14,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#334155',
-    marginBottom: 6,
-  },
-  required: {
-    color: '#EF4444',
+    marginTop: Spacing.md,
+    gap: Spacing.xs,
   },
   input: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Colors.surfaceSubtle,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: '#0F172A',
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    fontSize: 14,
+    color: Colors.textPrimary,
   },
   inputError: {
-    borderColor: '#EF4444',
-    backgroundColor: '#FEF2F2',
+    borderColor: Colors.error,
+    backgroundColor: Colors.errorBg,
   },
   errorText: {
-    color: '#EF4444',
+    color: Colors.error,
     fontSize: 12,
-    marginTop: 4,
+    marginTop: 2,
   },
   statusChips: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 6,
+    gap: Spacing.xs,
+    marginTop: Spacing.sm,
   },
   chip: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Colors.surfaceSubtle,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 16,
-    paddingHorizontal: 12,
+    borderColor: Colors.border,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.md,
     paddingVertical: 6,
   },
   chipActive: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
   },
   chipText: {
     fontSize: 12,
-    color: '#475569',
+    color: Colors.textSecondary,
     fontWeight: '600',
   },
   chipTextActive: {
-    color: '#FFFFFF',
+    color: Colors.textInverse,
   },
   row: {
     flexDirection: 'row',
-    gap: 12,
+    gap: Spacing.md,
   },
   col: {
     flex: 1,
   },
-  bottomSaveBtn: {
-    backgroundColor: '#2563EB',
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 4,
-    marginBottom: 16,
-  },
-  bottomSaveText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFFFFF',
+  bottomBtn: {
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.xl,
   },
 });

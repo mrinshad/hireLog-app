@@ -1,3 +1,4 @@
+import { JobStatus } from '@/types/job';
 import { CustomizedResume } from '@/types/resume';
 
 export type ResumeSectionId =
@@ -65,6 +66,22 @@ export interface ResumeVersion {
   pdfPath?: string | null;
   generationStatus: ResumeGenerationStatus;
   errorLog?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ResumeLibraryItem {
+  id: string;
+  jobId: string;
+  versionNumber: number;
+  templateVersion: string;
+  targetRole: string;
+  targetCompany: string;
+  pdfPath?: string | null;
+  generationStatus: ResumeGenerationStatus;
+  jobStatus?: JobStatus | null;
+  jobCompany?: string | null;
+  jobRole?: string | null;
   createdAt: string;
   updatedAt: string;
 }

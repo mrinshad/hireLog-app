@@ -11,7 +11,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import Feather from '@expo/vector-icons/Feather';
 
+import { AppHeader } from '@/components/common/AppHeader';
+import { Card } from '@/components/common/Card';
+import { DestructiveButton, PrimaryButton, SecondaryButton } from '@/components/common/Buttons';
+import { StatusBadge } from '@/components/common/StatusBadge';
+import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
 import { emailRepository } from '@/database/repositories/emailRepository';
 import { jobRepository } from '@/database/repositories/jobRepository';
 import { profileRepository } from '@/database/repositories/profileRepository';
@@ -21,7 +27,7 @@ import { geminiClient, GeminiError } from '@/services/gemini/client';
 import { jdAnalyzer } from '@/services/gemini/jdAnalyzer';
 import { ResumeVersion } from '@/services/latex/types';
 import { matchingEngine } from '@/services/matching/matchingEngine';
-import { formatRelativeDate, STATUS_CONFIG } from '@/services/tracking/trackingHelpers';
+import { formatRelativeDate } from '@/services/tracking/trackingHelpers';
 import { EmailDraft } from '@/types/email';
 import { Job, JOB_STATUSES, JobStatus, JobStatusHistory } from '@/types/job';
 import { MatchResult } from '@/types/matching';
@@ -58,7 +64,6 @@ export default function JobDetailsScreen() {
       setLatestResume(resumeVer);
       setEmailDraft(draft);
 
-      // Calculate profile match if analysis exists
       if (jobData?.analysis) {
         const profile = await profileRepository.getProfile();
         const match = matchingEngine.match(profile, jobData.analysis);
@@ -98,45 +103,38 @@ export default function JobDetailsScreen() {
     if (!job) return;
 
     try {
-      setIsAnalyzing(true);
       const apiKey = await settingsRepository.getGeminiApiKey();
       if (!apiKey) {
-        Alert.alert(
-          'API Key Required',
-          'Please configure your Gemini API Key in Settings to analyze Job Descriptions.',
-          [
-            { text: 'Go to Settings', onPress: () => router.push('/settings') },
-            { text: 'Cancel', style: 'cancel' },
-          ]
-        );
+        Alert.alert('API Key Required', 'Please configure your Gemini API Key in Settings first.');
         return;
       }
 
-      await jobRepository.updateJobAnalysis(job.id, 'Analyzing');
+      setIsAnalyzing(true);
       const analysis = await jdAnalyzer.analyze(job.jobDescription);
       await jobRepository.updateJobAnalysis(job.id, 'Analyzed', analysis);
+      const updatedJob = await jobRepository.getJob(job.id);
+      setJob(updatedJob);
 
-      await loadJobData();
-      Alert.alert('Analysis Complete', 'Job requirements extracted successfully!');
+      const profile = await profileRepository.getProfile();
+      const match = matchingEngine.match(profile, analysis);
+      setMatchResult(match);
     } catch (error: any) {
-      console.error('JD Analysis error:', error);
-      await jobRepository.updateJobAnalysis(job.id, 'Failed');
+      console.error('Analysis error:', error);
       Alert.alert(
         'Analysis Failed',
-        error instanceof GeminiError ? error.message : 'Could not analyze Job Description.'
+        error instanceof GeminiError ? error.message : 'Could not analyze job description.'
       );
-      await loadJobData();
     } finally {
       setIsAnalyzing(false);
     }
   };
 
-  const handleDelete = () => {
+  const handleDeleteJob = () => {
     if (!job) return;
 
     Alert.alert(
-      'Delete Job Posting?',
-      `Are you sure you want to delete "${job.role}" at ${job.company}? Generated resumes and drafts for this job will also be removed.`,
+      'Delete Job?',
+      `Delete application for ${job.company || 'this job'}? Associated resume versions and drafts will also be removed.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -160,8 +158,8 @@ export default function JobDetailsScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2563EB" />
-          <Text style={styles.loadingText}>Loading Job Details...</Text>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={Typography.caption}>Loading job details...</Text>
         </View>
       </SafeAreaView>
     );
@@ -170,144 +168,124 @@ export default function JobDetailsScreen() {
   if (!job) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={styles.backText}>← Jobs</Text>
-          </TouchableOpacity>
-        </View>
+        <AppHeader title="Job Details" showBack />
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyTitle}>Job Not Found</Text>
-          <TouchableOpacity style={styles.returnBtn} onPress={() => router.replace('/jobs')}>
-            <Text style={styles.returnBtnText}>Return to Jobs</Text>
-          </TouchableOpacity>
+          <Text style={Typography.sectionTitle}>Job Not Found</Text>
+          <PrimaryButton title="Return to Jobs" icon="arrow-left" onPress={() => router.replace('/jobs')} />
         </View>
       </SafeAreaView>
     );
   }
 
-  const statusStyle = STATUS_CONFIG[job.status] || STATUS_CONFIG.Draft;
-
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Top Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backText}>← Jobs</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          Job Details
-        </Text>
-        <TouchableOpacity
-          onPress={() => router.push(`/jobs/edit/${job.id}`)}
-          style={styles.editBtn}>
-          <Text style={styles.editText}>Edit</Text>
-        </TouchableOpacity>
-      </View>
+      <AppHeader
+        title="Job Details"
+        subtitle={job.company}
+        showBack
+        rightAction={
+          <SecondaryButton
+            title="Edit"
+            icon="edit-2"
+            size="sm"
+            onPress={() => router.push(`/jobs/edit/${job.id}`)}
+          />
+        }
+      />
 
       <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-        {/* Main Job Hero Header */}
-        <View style={styles.heroCard}>
+        {/* Header Hero Card */}
+        <Card style={styles.heroCard}>
           <View style={styles.heroTopRow}>
             <View style={styles.heroTitleArea}>
-              <Text style={styles.heroRole}>{job.role || 'Untitled Role'}</Text>
-              <Text style={styles.heroCompany}>
+              <Text style={Typography.screenTitle} numberOfLines={1}>
+                {job.role || 'Untitled Role'}
+              </Text>
+              <Text style={[Typography.itemTitle, { color: Colors.primary, marginTop: 2 }]} numberOfLines={1}>
                 {job.company || 'Company not specified'}
-                {job.location ? ` • 📍 ${job.location}` : ''}
+                {job.location ? ` • ${job.location}` : ''}
               </Text>
             </View>
-            <View
-              style={[
-                styles.statusBadge,
-                { backgroundColor: statusStyle.bg, borderColor: statusStyle.border },
-              ]}>
-              <Text style={[styles.statusText, { color: statusStyle.text }]}>
-                {statusStyle.icon} {statusStyle.label}
-              </Text>
-            </View>
+            <StatusBadge status={job.status} size="md" />
           </View>
 
           {job.status === 'Applied' && job.appliedAt && (
             <View style={styles.appliedDateRow}>
+              <Feather name="send" size={IconSizes.xs} color={Colors.primaryDark} />
               <Text style={styles.appliedDateText}>
-                🚀 Application submitted on {formatRelativeDate(job.appliedAt)}
+                Applied {formatRelativeDate(job.appliedAt)}
               </Text>
             </View>
           )}
 
           <View style={styles.statusActionRow}>
-            <TouchableOpacity
-              style={styles.changeStatusBtn}
-              onPress={() => setShowStatusModal(true)}>
-              <Text style={styles.changeStatusText}>⚡ Change Application Status</Text>
-            </TouchableOpacity>
-
+            <SecondaryButton
+              title="Change Status"
+              icon="refresh-cw"
+              size="sm"
+              onPress={() => setShowStatusModal(true)}
+            />
             {statusHistory.length > 0 && (
               <TouchableOpacity
                 style={styles.historyToggleBtn}
                 onPress={() => setShowHistory(!showHistory)}>
                 <Text style={styles.historyToggleText}>
-                  {showHistory ? '▲ Hide History' : `▼ History (${statusHistory.length})`}
+                  {showHistory ? 'Hide History' : `History (${statusHistory.length})`}
                 </Text>
+                <Feather
+                  name={showHistory ? 'chevron-up' : 'chevron-down'}
+                  size={12}
+                  color={Colors.textSecondary}
+                />
               </TouchableOpacity>
             )}
           </View>
 
-          {/* Status History Timeline */}
+          {/* Status History */}
           {showHistory && statusHistory.length > 0 && (
             <View style={styles.historyBox}>
-              <Text style={styles.historyTitle}>Status Transitions</Text>
+              <Text style={Typography.caption}>Status Transitions</Text>
               {statusHistory.map((item, idx) => (
                 <View key={item.id} style={styles.historyItem}>
-                  <Text style={styles.historyIndex}>{idx + 1}.</Text>
-                  <Text style={styles.historyText}>
-                    <Text style={{ fontWeight: '600' }}>{item.oldStatus}</Text> →{' '}
-                    <Text style={{ fontWeight: '700', color: '#2563EB' }}>
-                      {item.newStatus}
-                    </Text>
+                  <Text style={Typography.caption}>{idx + 1}.</Text>
+                  <Text style={Typography.bodyMedium}>
+                    {item.oldStatus} → <Text style={{ color: Colors.primary }}>{item.newStatus}</Text>
                   </Text>
-                  <Text style={styles.historyDate}>
+                  <Text style={[Typography.caption, { marginLeft: 'auto' }]}>
                     {formatRelativeDate(item.changedAt)}
                   </Text>
                 </View>
               ))}
             </View>
           )}
-        </View>
+        </Card>
 
-        {/* ===================================================
-            CONNECTED MODULES HUB
-            =================================================== */}
-        <Text style={styles.sectionHeaderTitle}>Application Pipeline Modules</Text>
+        {/* Workflow Actions */}
+        <Text style={[Typography.sectionTitle, { marginBottom: Spacing.sm }]}>Workflow</Text>
 
-        {/* Module 1: JD Analysis */}
-        <View style={styles.moduleCard}>
+        {/* 1. JD Analysis */}
+        <Card style={styles.moduleCard}>
           <View style={styles.moduleTopRow}>
-            <View style={styles.moduleIconCircle}>
-              <Text style={styles.moduleIcon}>🔍</Text>
-            </View>
+            <Feather name="search" size={IconSizes.md} color={Colors.primary} />
             <View style={styles.moduleTitleArea}>
-              <Text style={styles.moduleTitle}>1. JD Analysis</Text>
-              <Text style={styles.moduleSubtext}>
+              <Text style={Typography.itemTitle}>1. JD Analysis</Text>
+              <Text style={Typography.caption}>
                 {job.analysisStatus === 'Analyzed' && job.analysis
                   ? `${job.analysis.requiredSkills.length} required skills extracted`
                   : job.analysisStatus === 'Analyzing'
-                  ? 'Analyzing with Gemini...'
+                  ? 'Analyzing...'
                   : 'Extract skills and requirements'}
               </Text>
             </View>
             <View
               style={[
-                styles.moduleStatusBadge,
-                job.analysisStatus === 'Analyzed'
-                  ? styles.badgeSuccess
-                  : styles.badgeNeutral,
+                styles.moduleStatusPill,
+                job.analysisStatus === 'Analyzed' ? styles.statusPillSuccess : styles.statusPillNeutral,
               ]}>
               <Text
                 style={[
-                  styles.moduleStatusBadgeText,
-                  job.analysisStatus === 'Analyzed'
-                    ? styles.badgeTextSuccess
-                    : styles.badgeTextNeutral,
+                  styles.moduleStatusPillText,
+                  job.analysisStatus === 'Analyzed' ? styles.statusPillTextSuccess : styles.statusPillTextNeutral,
                 ]}>
                 {job.analysisStatus}
               </Text>
@@ -322,206 +300,168 @@ export default function JobDetailsScreen() {
                 </View>
               ))}
               {job.analysis.requiredSkills.length > 4 && (
-                <Text style={styles.moreSkillsText}>
-                  +{job.analysis.requiredSkills.length - 4} more
-                </Text>
+                <Text style={Typography.caption}>+{job.analysis.requiredSkills.length - 4} more</Text>
               )}
             </View>
           ) : (
-            <TouchableOpacity
-              style={styles.moduleActionBtn}
-              disabled={isAnalyzing}
-              onPress={handleAnalyzeJD}>
-              <Text style={styles.moduleActionBtnText}>
-                {isAnalyzing ? 'Analyzing...' : '✨ Analyze JD with Gemini'}
-              </Text>
-            </TouchableOpacity>
+            <PrimaryButton
+              title="Analyze JD with Gemini"
+              icon="cpu"
+              size="sm"
+              loading={isAnalyzing}
+              onPress={handleAnalyzeJD}
+              style={{ marginTop: Spacing.sm }}
+            />
           )}
-        </View>
+        </Card>
 
-        {/* Module 2: Profile Match Analysis */}
-        <View style={styles.moduleCard}>
+        {/* 2. Profile Match */}
+        <Card style={styles.moduleCard}>
           <View style={styles.moduleTopRow}>
-            <View style={styles.moduleIconCircle}>
-              <Text style={styles.moduleIcon}>🎯</Text>
-            </View>
+            <Feather name="target" size={IconSizes.md} color={Colors.primary} />
             <View style={styles.moduleTitleArea}>
-              <Text style={styles.moduleTitle}>2. Profile Match</Text>
-              <Text style={styles.moduleSubtext}>
-                {matchResult
-                  ? `${matchResult.overallScore}% overall match score`
-                  : 'Deterministic local comparison'}
+              <Text style={Typography.itemTitle}>2. Profile Match</Text>
+              <Text style={Typography.caption}>
+                {matchResult ? `${matchResult.overallScore}% overall score` : 'Deterministic local comparison'}
               </Text>
             </View>
-            {matchResult ? (
+            {matchResult && (
               <View style={styles.scoreBadge}>
                 <Text style={styles.scoreBadgeText}>{matchResult.overallScore}%</Text>
               </View>
-            ) : null}
+            )}
           </View>
 
           {matchResult ? (
-            <TouchableOpacity
-              style={styles.moduleSecondaryBtn}
-              onPress={() => router.push(`/jobs/customize/${job.id}`)}>
-              <Text style={styles.moduleSecondaryBtnText}>
-                View Match Breakdown & Tailor Resume →
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            <Text style={styles.moduleHint}>Analyze the JD above to view profile matching.</Text>
-          )}
-        </View>
+            <SecondaryButton
+              title="Match Breakdown & Tailor"
+              icon="chevron-right"
+              size="sm"
+              onPress={() => router.push(`/jobs/customize/${job.id}`)}
+              style={{ marginTop: Spacing.sm }}
+            />
+          ) : null}
+        </Card>
 
-        {/* Module 3: Tailored Resume (LaTeX / PDF) */}
-        <View style={styles.moduleCard}>
+        {/* 3. Tailored Resume */}
+        <Card style={styles.moduleCard}>
           <View style={styles.moduleTopRow}>
-            <View style={styles.moduleIconCircle}>
-              <Text style={styles.moduleIcon}>📄</Text>
-            </View>
+            <Feather name="file-text" size={IconSizes.md} color={Colors.primary} />
             <View style={styles.moduleTitleArea}>
-              <Text style={styles.moduleTitle}>3. Tailored Resume (PDF)</Text>
-              <Text style={styles.moduleSubtext}>
-                {latestResume?.pdfPath
-                  ? `Version v${latestResume.versionNumber} ready`
-                  : 'ATS-compliant resume generator'}
+              <Text style={Typography.itemTitle}>3. Tailored Resume (PDF)</Text>
+              <Text style={Typography.caption}>
+                {latestResume?.pdfPath ? `Version v${latestResume.versionNumber} ready` : 'Master LaTeX template generator'}
               </Text>
             </View>
             <View
               style={[
-                styles.moduleStatusBadge,
-                latestResume?.pdfPath ? styles.badgeSuccess : styles.badgeNeutral,
+                styles.moduleStatusPill,
+                latestResume?.pdfPath ? styles.statusPillSuccess : styles.statusPillNeutral,
               ]}>
               <Text
                 style={[
-                  styles.moduleStatusBadgeText,
-                  latestResume?.pdfPath ? styles.badgeTextSuccess : styles.badgeTextNeutral,
+                  styles.moduleStatusPillText,
+                  latestResume?.pdfPath ? styles.statusPillTextSuccess : styles.statusPillTextNeutral,
                 ]}>
-                {latestResume?.pdfPath ? 'PDF Ready' : 'Not Generated'}
+                {latestResume?.pdfPath ? 'PDF Ready' : 'Pending'}
               </Text>
             </View>
           </View>
 
-          <TouchableOpacity
-            style={latestResume?.pdfPath ? styles.moduleSuccessBtn : styles.moduleActionBtn}
-            onPress={() => router.push(`/jobs/resume/${job.id}`)}>
-            <Text style={styles.moduleActionBtnText}>
-              {latestResume?.pdfPath
-                ? `👁️ View / Share Resume (v${latestResume.versionNumber})`
-                : '⚡ Customize & Generate Resume'}
-            </Text>
-          </TouchableOpacity>
-        </View>
+          <PrimaryButton
+            title={latestResume?.pdfPath ? `View Resume (v${latestResume.versionNumber})` : 'Customize & Generate Resume'}
+            icon="file-text"
+            size="sm"
+            onPress={() => router.push(`/jobs/resume/${job.id}`)}
+            style={{ marginTop: Spacing.sm }}
+          />
+        </Card>
 
-        {/* Module 4: Email Application */}
-        <View style={styles.moduleCard}>
+        {/* 4. Application Email */}
+        <Card style={styles.moduleCard}>
           <View style={styles.moduleTopRow}>
-            <View style={styles.moduleIconCircle}>
-              <Text style={styles.moduleIcon}>✉️</Text>
-            </View>
+            <Feather name="mail" size={IconSizes.md} color={Colors.primary} />
             <View style={styles.moduleTitleArea}>
-              <Text style={styles.moduleTitle}>4. Application Email</Text>
-              <Text style={styles.moduleSubtext}>
-                {emailDraft?.body
-                  ? 'Draft prepared with resume attachment'
-                  : 'Compose & launch email app'}
+              <Text style={Typography.itemTitle}>4. Application Email</Text>
+              <Text style={Typography.caption}>
+                {emailDraft?.body ? 'Draft prepared with resume attachment' : 'Compose & launch email app'}
               </Text>
             </View>
             <View
               style={[
-                styles.moduleStatusBadge,
-                emailDraft?.body ? styles.badgeSuccess : styles.badgeNeutral,
+                styles.moduleStatusPill,
+                emailDraft?.body ? styles.statusPillSuccess : styles.statusPillNeutral,
               ]}>
               <Text
                 style={[
-                  styles.moduleStatusBadgeText,
-                  emailDraft?.body ? styles.badgeTextSuccess : styles.badgeTextNeutral,
+                  styles.moduleStatusPillText,
+                  emailDraft?.body ? styles.statusPillTextSuccess : styles.statusPillTextNeutral,
                 ]}>
                 {emailDraft?.body ? 'Draft Ready' : 'Not Prepared'}
               </Text>
             </View>
           </View>
 
-          <TouchableOpacity
-            style={styles.moduleSecondaryBtn}
-            onPress={() => router.push(`/jobs/email/${job.id}`)}>
-            <Text style={styles.moduleSecondaryBtnText}>
-              {emailDraft?.body ? '✉️ Open Email Composer' : '✉️ Prepare Application Email →'}
-            </Text>
-          </TouchableOpacity>
-        </View>
+          <SecondaryButton
+            title={emailDraft?.body ? 'Open Email Composer' : 'Prepare Application Email'}
+            icon="mail"
+            size="sm"
+            onPress={() => router.push(`/jobs/email/${job.id}`)}
+            style={{ marginTop: Spacing.sm }}
+          />
+        </Card>
 
-        {/* ===================================================
-            ORIGINAL RAW JOB DESCRIPTION
-            =================================================== */}
-        <View style={styles.jdCard}>
-          <View style={styles.jdHeader}>
-            <Text style={styles.jdTitle}>Original Job Description</Text>
+        {/* Raw Job Description */}
+        <Card style={styles.moduleCard}>
+          <View style={styles.rowBetween}>
+            <Text style={Typography.sectionTitle}>Job Description</Text>
             <TouchableOpacity onPress={() => setShowFullJd(!showFullJd)}>
-              <Text style={styles.jdToggleText}>
-                {showFullJd ? 'Collapse ▲' : 'Expand ▼'}
-              </Text>
+              <Text style={styles.toggleJdText}>{showFullJd ? 'Collapse' : 'Expand'}</Text>
             </TouchableOpacity>
           </View>
-          <Text style={styles.jdText} numberOfLines={showFullJd ? undefined : 6}>
+          <Text
+            style={[Typography.body, { marginTop: Spacing.sm }]}
+            numberOfLines={showFullJd ? undefined : 4}>
             {job.jobDescription}
           </Text>
-        </View>
+        </Card>
 
         {/* Delete Job */}
-        <TouchableOpacity style={styles.deleteBtn} onPress={handleDelete}>
-          <Text style={styles.deleteBtnText}>Delete Job Posting</Text>
-        </TouchableOpacity>
+        <DestructiveButton
+          title="Delete Application"
+          onPress={handleDeleteJob}
+          style={{ marginTop: Spacing.sm, marginBottom: Spacing.xxl }}
+        />
       </ScrollView>
 
-      {/* ===================================================
-          STATUS CHANGER MODAL
-          =================================================== */}
-      <Modal
-        visible={showStatusModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowStatusModal(false)}>
+      {/* Status Modal */}
+      <Modal visible={showStatusModal} transparent animationType="fade">
         <View style={styles.modalBackdrop}>
-          <View style={styles.statusModalCard}>
-            <Text style={styles.statusModalTitle}>Update Application Status</Text>
-            <Text style={styles.statusModalSub}>
-              Select current stage for {job.role} at {job.company}:
-            </Text>
-
-            <View style={styles.statusOptionsList}>
-              {JOB_STATUSES.map((status) => {
-                const conf = STATUS_CONFIG[status] || STATUS_CONFIG.Draft;
-                const isCurrent = job.status === status;
-
-                return (
-                  <TouchableOpacity
-                    key={status}
-                    style={[
-                      styles.statusOptionRow,
-                      isCurrent && styles.statusOptionRowSelected,
-                    ]}
-                    onPress={() => handleStatusChange(status)}>
-                    <Text style={styles.statusOptionIcon}>{conf.icon}</Text>
-                    <Text
-                      style={[
-                        styles.statusOptionLabel,
-                        isCurrent && styles.statusOptionLabelSelected,
-                      ]}>
-                      {status}
-                    </Text>
-                    {isCurrent && <Text style={styles.currentCheck}>✓ Active</Text>}
-                  </TouchableOpacity>
-                );
-              })}
+          <Card style={styles.modalCard}>
+            <Text style={Typography.sectionTitle}>Change Application Status</Text>
+            <View style={styles.statusOptions}>
+              {JOB_STATUSES.map((status) => (
+                <TouchableOpacity
+                  key={status}
+                  style={[
+                    styles.statusOptionRow,
+                    job.status === status && styles.statusOptionSelected,
+                  ]}
+                  onPress={() => handleStatusChange(status)}>
+                  <StatusBadge status={status} size="sm" />
+                  {job.status === status && (
+                    <Feather name="check" size={14} color={Colors.primary} style={{ marginLeft: 'auto' }} />
+                  )}
+                </TouchableOpacity>
+              ))}
             </View>
-
-            <TouchableOpacity
-              style={styles.closeModalBtn}
-              onPress={() => setShowStatusModal(false)}>
-              <Text style={styles.closeModalText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
+            <SecondaryButton
+              title="Cancel"
+              size="sm"
+              onPress={() => setShowStatusModal(false)}
+              style={{ marginTop: Spacing.md }}
+            />
+          </Card>
         </View>
       </Modal>
     </SafeAreaView>
@@ -531,450 +471,185 @@ export default function JobDetailsScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-    flex: 1,
-    textAlign: 'center',
-  },
-  backBtn: {
-    padding: 6,
-  },
-  backText: {
-    fontSize: 15,
-    color: '#2563EB',
-    fontWeight: '600',
-  },
-  editBtn: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: '#EFF6FF',
-    borderRadius: 8,
-  },
-  editText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#2563EB',
+    backgroundColor: Colors.background,
   },
   container: {
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
+    padding: Spacing.lg,
+    paddingBottom: Spacing.xxxl,
   },
   loadingContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '500',
+    gap: Spacing.sm,
   },
   emptyContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 8,
-  },
-  returnBtn: {
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  returnBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 14,
+    padding: Spacing.xxl,
+    gap: Spacing.lg,
   },
   heroCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 16,
-    marginBottom: 20,
+    marginBottom: Spacing.lg,
   },
   heroTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 10,
+    gap: Spacing.sm,
   },
   heroTitleArea: {
     flex: 1,
-    marginRight: 10,
-  },
-  heroRole: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  heroCompany: {
-    fontSize: 14,
-    color: '#64748B',
-    marginTop: 2,
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '700',
   },
   appliedDateRow: {
-    backgroundColor: '#F0F9FF',
-    padding: 8,
-    borderRadius: 8,
-    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primaryLight,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 4,
+    borderRadius: Radius.sm,
+    gap: Spacing.xs,
+    marginTop: Spacing.md,
   },
   appliedDateText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#0284C7',
+    color: Colors.primaryDark,
   },
   statusActionRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
+    gap: Spacing.md,
+    marginTop: Spacing.md,
+    paddingTop: Spacing.md,
     borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-    paddingTop: 10,
-  },
-  changeStatusBtn: {
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  changeStatusText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#2563EB',
+    borderTopColor: Colors.borderLight,
   },
   historyToggleBtn: {
-    padding: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginLeft: 'auto',
   },
   historyToggleText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#64748B',
+    color: Colors.textSecondary,
   },
   historyBox: {
-    marginTop: 12,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 8,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  historyTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#475569',
-    marginBottom: 6,
+    backgroundColor: Colors.surfaceSubtle,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.md,
+    gap: Spacing.xs,
   },
   historyItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 3,
-  },
-  historyIndex: {
-    fontSize: 11,
-    color: '#94A3B8',
-    width: 18,
-  },
-  historyText: {
-    fontSize: 12,
-    color: '#334155',
-    flex: 1,
-  },
-  historyDate: {
-    fontSize: 11,
-    color: '#94A3B8',
-  },
-  sectionHeaderTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 12,
+    gap: Spacing.xs,
   },
   moduleCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 16,
-    marginBottom: 12,
+    marginBottom: Spacing.md,
   },
   moduleTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
-  },
-  moduleIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#F1F5F9',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 10,
-  },
-  moduleIcon: {
-    fontSize: 18,
+    gap: Spacing.md,
   },
   moduleTitleArea: {
     flex: 1,
   },
-  moduleTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
+  moduleStatusPill: {
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: Radius.sm,
   },
-  moduleSubtext: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 1,
+  statusPillSuccess: {
+    backgroundColor: Colors.successBg,
   },
-  moduleStatusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
+  statusPillNeutral: {
+    backgroundColor: Colors.surfaceSubtle,
   },
-  badgeSuccess: {
-    backgroundColor: '#DCFCE7',
-  },
-  badgeNeutral: {
-    backgroundColor: '#F1F5F9',
-  },
-  moduleStatusBadgeText: {
+  moduleStatusPillText: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '600',
   },
-  badgeTextSuccess: {
-    color: '#16A34A',
+  statusPillTextSuccess: {
+    color: Colors.successText,
   },
-  badgeTextNeutral: {
-    color: '#64748B',
-  },
-  scoreBadge: {
-    backgroundColor: '#DCFCE7',
-    borderWidth: 1,
-    borderColor: '#BBF7D0',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  scoreBadgeText: {
-    fontSize: 13,
-    fontWeight: '800',
-    color: '#16A34A',
+  statusPillTextNeutral: {
+    color: Colors.textSecondary,
   },
   skillsSummaryRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: Spacing.xs,
     alignItems: 'center',
+    marginTop: Spacing.sm,
   },
   skillPill: {
-    backgroundColor: '#F1F5F9',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+    backgroundColor: Colors.surfaceSubtle,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
   },
   skillPillText: {
     fontSize: 11,
-    fontWeight: '600',
-    color: '#334155',
+    color: Colors.textPrimary,
+    fontWeight: '500',
   },
-  moreSkillsText: {
-    fontSize: 11,
-    color: '#64748B',
+  scoreBadge: {
+    backgroundColor: Colors.primaryLight,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radius.sm,
   },
-  moduleActionBtn: {
-    backgroundColor: '#2563EB',
-    borderRadius: 8,
-    paddingVertical: 10,
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  moduleSuccessBtn: {
-    backgroundColor: '#16A34A',
-    borderRadius: 8,
-    paddingVertical: 10,
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  moduleActionBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  moduleSecondaryBtn: {
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    borderRadius: 8,
-    paddingVertical: 10,
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  moduleSecondaryBtnText: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#2563EB',
-  },
-  moduleHint: {
+  scoreBadgeText: {
     fontSize: 12,
-    color: '#94A3B8',
-    fontStyle: 'italic',
+    fontWeight: '700',
+    color: Colors.primaryDark,
   },
-  jdCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 16,
-    marginBottom: 16,
-    marginTop: 8,
-  },
-  jdHeader: {
+  rowBetween: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
   },
-  jdTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#0F172A',
-  },
-  jdToggleText: {
+  toggleJdText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#2563EB',
-  },
-  jdText: {
-    fontSize: 13,
-    color: '#475569',
-    lineHeight: 18,
-    backgroundColor: '#F8FAFC',
-    padding: 10,
-    borderRadius: 8,
-  },
-  deleteBtn: {
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    backgroundColor: '#FEF2F2',
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  deleteBtnText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#DC2626',
+    color: Colors.primary,
   },
   modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.5)',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
+    padding: Spacing.lg,
   },
-  statusModalCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    padding: 20,
+  modalCard: {
     width: '100%',
-    maxWidth: 340,
+    maxWidth: 320,
   },
-  statusModalTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 4,
-  },
-  statusModalSub: {
-    fontSize: 13,
-    color: '#64748B',
-    marginBottom: 16,
-  },
-  statusOptionsList: {
-    gap: 8,
-    marginBottom: 16,
+  statusOptions: {
+    gap: Spacing.xs,
+    marginTop: Spacing.md,
   },
   statusOptionRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: Radius.md,
   },
-  statusOptionRowSelected: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#2563EB',
-  },
-  statusOptionIcon: {
-    fontSize: 18,
-    marginRight: 10,
-  },
-  statusOptionLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#334155',
-    flex: 1,
-  },
-  statusOptionLabelSelected: {
-    color: '#2563EB',
-    fontWeight: '700',
-  },
-  currentCheck: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#2563EB',
-  },
-  closeModalBtn: {
-    backgroundColor: '#F1F5F9',
-    borderRadius: 10,
-    paddingVertical: 11,
-    alignItems: 'center',
-  },
-  closeModalText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#475569',
+  statusOptionSelected: {
+    backgroundColor: Colors.primaryLight,
   },
 });

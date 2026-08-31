@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Feather from '@expo/vector-icons/Feather';
 
+import { AppHeader } from '@/components/common/AppHeader';
 import { CertificationsModal } from '@/components/profile/CertificationsModal';
 import { EducationModal } from '@/components/profile/EducationModal';
 import { ExperienceModal } from '@/components/profile/ExperienceModal';
@@ -10,6 +12,7 @@ import { ProfessionalInfoModal } from '@/components/profile/ProfessionalInfoModa
 import { ProfileSectionCard } from '@/components/profile/ProfileSectionCard';
 import { ProjectsModal } from '@/components/profile/ProjectsModal';
 import { SkillsModal } from '@/components/profile/SkillsModal';
+import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
 import { profileRepository } from '@/database/repositories/profileRepository';
 import {
   Certification,
@@ -38,15 +41,14 @@ export default function ProfileScreen() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
 
-  // Load saved profile from SQLite on mount
   useEffect(() => {
     async function loadSavedProfile() {
       try {
         const saved = await profileRepository.getProfile();
         setProfile(saved);
       } catch (error) {
-        console.error('Failed to load profile from SQLite:', error);
-        Alert.alert('Error', 'Failed to load saved profile data from local storage.');
+        console.error('Failed to load profile:', error);
+        Alert.alert('Error', 'Failed to load profile.');
       } finally {
         setIsLoading(false);
       }
@@ -54,14 +56,13 @@ export default function ProfileScreen() {
     loadSavedProfile();
   }, []);
 
-  // Save handlers with SQLite persistence
   const handleSavePersonal = async (data: PersonalDetails) => {
     try {
       await profileRepository.savePersonalDetails(data);
       setProfile((prev) => ({ ...prev, personalDetails: data }));
     } catch (error) {
       console.error('Failed to save personal details:', error);
-      Alert.alert('Error', 'Failed to save personal details to local storage.');
+      Alert.alert('Error', 'Failed to save personal details.');
     }
   };
 
@@ -71,7 +72,7 @@ export default function ProfileScreen() {
       setProfile((prev) => ({ ...prev, professionalInfo: data }));
     } catch (error) {
       console.error('Failed to save professional info:', error);
-      Alert.alert('Error', 'Failed to save professional info to local storage.');
+      Alert.alert('Error', 'Failed to save professional info.');
     }
   };
 
@@ -81,7 +82,7 @@ export default function ProfileScreen() {
       setProfile((prev) => ({ ...prev, skills }));
     } catch (error) {
       console.error('Failed to save skills:', error);
-      Alert.alert('Error', 'Failed to save skills to local storage.');
+      Alert.alert('Error', 'Failed to save skills.');
     }
   };
 
@@ -91,7 +92,7 @@ export default function ProfileScreen() {
       setProfile((prev) => ({ ...prev, experience }));
     } catch (error) {
       console.error('Failed to save experience:', error);
-      Alert.alert('Error', 'Failed to save experience to local storage.');
+      Alert.alert('Error', 'Failed to save experience.');
     }
   };
 
@@ -101,7 +102,7 @@ export default function ProfileScreen() {
       setProfile((prev) => ({ ...prev, projects }));
     } catch (error) {
       console.error('Failed to save projects:', error);
-      Alert.alert('Error', 'Failed to save projects to local storage.');
+      Alert.alert('Error', 'Failed to save projects.');
     }
   };
 
@@ -111,7 +112,7 @@ export default function ProfileScreen() {
       setProfile((prev) => ({ ...prev, education }));
     } catch (error) {
       console.error('Failed to save education:', error);
-      Alert.alert('Error', 'Failed to save education to local storage.');
+      Alert.alert('Error', 'Failed to save education.');
     }
   };
 
@@ -121,14 +122,13 @@ export default function ProfileScreen() {
       setProfile((prev) => ({ ...prev, certifications }));
     } catch (error) {
       console.error('Failed to save certifications:', error);
-      Alert.alert('Error', 'Failed to save certifications to local storage.');
+      Alert.alert('Error', 'Failed to save certifications.');
     }
   };
 
-  // Dynamic summary formatters
   const getPersonalSummary = () => {
     const { fullName, location, email } = profile.personalDetails;
-    if (!fullName) return 'Name, email, phone, location & profiles';
+    if (!fullName) return 'Name, email, phone & links';
     const parts = [fullName];
     if (location) parts.push(location);
     else if (email) parts.push(email);
@@ -137,7 +137,7 @@ export default function ProfileScreen() {
 
   const getProfessionalSummary = () => {
     const { professionalTitle, professionalSummary } = profile.professionalInfo;
-    if (!professionalTitle && !professionalSummary) return 'Title & career summary for resume intro';
+    if (!professionalTitle && !professionalSummary) return 'Title & career summary';
     if (professionalTitle && professionalSummary) {
       return `${professionalTitle} — ${professionalSummary}`;
     }
@@ -145,7 +145,7 @@ export default function ProfileScreen() {
   };
 
   const getSkillsSummary = () => {
-    if (profile.skills.length === 0) return 'Categorized technical & domain skills';
+    if (profile.skills.length === 0) return 'Technical & domain skills';
     const sample = profile.skills
       .slice(0, 4)
       .map((s) => s.name)
@@ -156,9 +156,7 @@ export default function ProfileScreen() {
   const getExperienceSummary = () => {
     if (profile.experience.length === 0) return 'Employment history & accomplishments';
     const latest = profile.experience[0];
-    return `${latest.jobTitle} at ${latest.company} (${latest.startDate || ''} - ${
-      latest.currentlyWorking ? 'Present' : latest.endDate || 'Present'
-    })`;
+    return `${latest.jobTitle} at ${latest.company}`;
   };
 
   const getProjectsSummary = () => {
@@ -171,13 +169,13 @@ export default function ProfileScreen() {
   };
 
   const getEducationSummary = () => {
-    if (profile.education.length === 0) return 'Degrees, universities & academic records';
+    if (profile.education.length === 0) return 'Degrees & institutions';
     const latest = profile.education[0];
     return `${latest.degree}${latest.institution ? ` • ${latest.institution}` : ''}`;
   };
 
   const getCertificationsSummary = () => {
-    if (profile.certifications.length === 0) return 'Certifications, licenses & credentials';
+    if (profile.certifications.length === 0) return 'Certifications & credentials';
     const sample = profile.certifications
       .slice(0, 2)
       .map((c) => c.name)
@@ -189,8 +187,8 @@ export default function ProfileScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2563EB" />
-          <Text style={styles.loadingText}>Loading Profile...</Text>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={Typography.caption}>Loading Profile...</Text>
         </View>
       </SafeAreaView>
     );
@@ -198,12 +196,7 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Candidate Profile</Text>
-        <Text style={styles.subtitle}>
-          Single source of truth for resume tailoring and application tracking.
-        </Text>
-      </View>
+      <AppHeader title="Profile" subtitle="Verified Source of Truth" />
 
       <ScrollView
         style={styles.scrollView}
@@ -211,16 +204,16 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}>
         {/* Notice banner */}
         <View style={styles.sourceOfTruthBanner}>
-          <Text style={styles.bannerIcon}>🔒</Text>
+          <Feather name="shield" size={IconSizes.sm} color={Colors.primaryDark} />
           <Text style={styles.bannerText}>
-            HireLog only tailors resumes using verified information entered here.
+            Resumes are strictly tailored from this verified profile.
           </Text>
         </View>
 
         {/* 1. Personal Details */}
         <ProfileSectionCard
           title="Personal Details"
-          icon="👤"
+          icon="user"
           summary={getPersonalSummary()}
           onEdit={() => setActiveModal('personal')}
           actionLabel={profile.personalDetails.fullName ? 'Edit' : 'Add'}
@@ -229,7 +222,7 @@ export default function ProfileScreen() {
         {/* 2. Professional Information */}
         <ProfileSectionCard
           title="Professional Info"
-          icon="💼"
+          icon="briefcase"
           summary={getProfessionalSummary()}
           onEdit={() => setActiveModal('professional')}
           actionLabel={profile.professionalInfo.professionalTitle ? 'Edit' : 'Add'}
@@ -238,7 +231,7 @@ export default function ProfileScreen() {
         {/* 3. Skills */}
         <ProfileSectionCard
           title="Skills"
-          icon="⚡"
+          icon="cpu"
           itemCount={profile.skills.length}
           summary={getSkillsSummary()}
           onEdit={() => setActiveModal('skills')}
@@ -248,7 +241,7 @@ export default function ProfileScreen() {
         {/* 4. Work Experience */}
         <ProfileSectionCard
           title="Work Experience"
-          icon="🏢"
+          icon="calendar"
           itemCount={profile.experience.length}
           summary={getExperienceSummary()}
           onEdit={() => setActiveModal('experience')}
@@ -258,7 +251,7 @@ export default function ProfileScreen() {
         {/* 5. Projects */}
         <ProfileSectionCard
           title="Projects"
-          icon="🚀"
+          icon="folder"
           itemCount={profile.projects.length}
           summary={getProjectsSummary()}
           onEdit={() => setActiveModal('projects')}
@@ -268,7 +261,7 @@ export default function ProfileScreen() {
         {/* 6. Education */}
         <ProfileSectionCard
           title="Education"
-          icon="🎓"
+          icon="book"
           itemCount={profile.education.length}
           summary={getEducationSummary()}
           onEdit={() => setActiveModal('education')}
@@ -278,7 +271,7 @@ export default function ProfileScreen() {
         {/* 7. Certifications */}
         <ProfileSectionCard
           title="Certifications"
-          icon="📜"
+          icon="award"
           itemCount={profile.certifications.length}
           summary={getCertificationsSummary()}
           onEdit={() => setActiveModal('certifications')}
@@ -342,66 +335,38 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Colors.background,
   },
   loadingContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#0F172A',
-    letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#64748B',
-    marginTop: 2,
-    lineHeight: 18,
+    gap: Spacing.sm,
   },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 32,
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xxxl,
   },
   sourceOfTruthBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EFF6FF',
+    backgroundColor: Colors.primaryLight,
     borderWidth: 1,
-    borderColor: '#DBEAFE',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 14,
-    gap: 8,
-  },
-  bannerIcon: {
-    fontSize: 16,
+    borderColor: Colors.primaryBorder,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
   },
   bannerText: {
     flex: 1,
     fontSize: 12,
-    color: '#1E40AF',
+    color: Colors.primaryDark,
     fontWeight: '500',
     lineHeight: 16,
   },

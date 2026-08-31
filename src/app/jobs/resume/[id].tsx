@@ -12,7 +12,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as Sharing from 'expo-sharing';
+import Feather from '@expo/vector-icons/Feather';
 
+import { AppHeader } from '@/components/common/AppHeader';
+import { Card } from '@/components/common/Card';
+import { PrimaryButton, SecondaryButton } from '@/components/common/Buttons';
+import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
 import { jobRepository } from '@/database/repositories/jobRepository';
 import { profileRepository } from '@/database/repositories/profileRepository';
 import { resumeRepository } from '@/database/repositories/resumeRepository';
@@ -51,7 +56,6 @@ export default function ResumePreviewScreen() {
         return;
       }
 
-      // Load Profile & build CustomizedResume
       const profile = await profileRepository.getProfile();
       const matchResult = matchingEngine.match(profile, jobData.analysis);
       const tailored = resumeCustomizer.customize(
@@ -62,7 +66,6 @@ export default function ResumePreviewScreen() {
       );
       setCustomizedResume(tailored);
 
-      // Load existing versions
       const existingVersions = await resumeRepository.getResumeVersions(jobData.id);
       setVersions(existingVersions);
       if (existingVersions.length > 0) {
@@ -87,61 +90,49 @@ export default function ResumePreviewScreen() {
       setIsGenerating(true);
       setShowErrorLog(false);
 
-      // Step 0: Validate resume against Profile source of truth
-      setGenerationStep('Validating resume against Profile...');
+      setGenerationStep('Validating against Profile...');
       const profile = await profileRepository.getProfile();
       resumeValidator.validate(profile, customizedResume);
 
-      // Step 1: Render LaTeX source
-      setGenerationStep('Generating LaTeX markup...');
+      setGenerationStep('Rendering LaTeX markup...');
       const latexSource = latexRenderer.render(customizedResume);
 
-      // Step 2: Save initial version in SQLite (Pending status)
-      setGenerationStep('Creating resume record...');
+      setGenerationStep('Saving version...');
       const newVersion = await resumeRepository.saveResumeVersion(
         job.id,
         customizedResume,
         latexSource,
         null,
-        'Compiling'
+        'Compiling',
+        null,
+        'master-v1'
       );
 
-      // Step 3: Compile LaTeX to PDF
-      setGenerationStep('Compiling LaTeX to PDF...');
+      setGenerationStep('Compiling PDF document...');
       try {
-        const compileResult = await latexCompiler.compileToPdf(
+        const { pdfPath } = await latexCompiler.compileToPdf(
           latexSource,
           job.id,
           newVersion.id
         );
 
-        // Step 4: Update SQLite with PDF path & Generated status
-        setGenerationStep('Saving PDF to device...');
-        await resumeRepository.updateResumePdf(
-          newVersion.id,
-          compileResult.pdfPath,
-          'Generated',
-          null
-        );
-
-        newVersion.pdfPath = compileResult.pdfPath;
+        await resumeRepository.updateResumePdf(newVersion.id, pdfPath, 'Generated', null);
+        newVersion.pdfPath = pdfPath;
         newVersion.generationStatus = 'Generated';
 
-        // Refresh versions list
         const updatedVersions = await resumeRepository.getResumeVersions(job.id);
         setVersions(updatedVersions);
         setSelectedVersion(newVersion);
 
         Alert.alert(
           'Resume Generated',
-          `PDF Resume (v${newVersion.versionNumber}) is compiled and saved locally!`
+          `Resume version v${newVersion.versionNumber} has been compiled and saved.`
         );
       } catch (compileErr: any) {
-        console.error('PDF compilation failed:', compileErr);
         const errorLog =
           compileErr instanceof CompilerError
             ? compileErr.compilerLog
-            : String(compileErr);
+            : compileErr.message || 'Unknown compilation error';
 
         await resumeRepository.updateResumePdf(
           newVersion.id,
@@ -214,8 +205,8 @@ export default function ResumePreviewScreen() {
     return (
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2563EB" />
-          <Text style={styles.loadingText}>Loading resume preview...</Text>
+          <ActivityIndicator size="large" color={Colors.primary} />
+          <Text style={Typography.caption}>Loading resume preview...</Text>
         </View>
       </SafeAreaView>
     );
@@ -224,21 +215,10 @@ export default function ResumePreviewScreen() {
   if (!job || !customizedResume) {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-            <Text style={styles.backText}>← Back</Text>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>Resume Preview</Text>
-          <View style={{ width: 40 }} />
-        </View>
+        <AppHeader title="Resume Preview" showBack />
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyTitle}>JD Analysis Required</Text>
-          <Text style={styles.emptySubtext}>
-            Please analyze the Job Description first before generating LaTeX source.
-          </Text>
-          <TouchableOpacity style={styles.returnBtn} onPress={() => router.back()}>
-            <Text style={styles.returnBtnText}>Return</Text>
-          </TouchableOpacity>
+          <Text style={Typography.sectionTitle}>JD Analysis Required</Text>
+          <PrimaryButton title="Return to Job" icon="arrow-left" onPress={() => router.back()} />
         </View>
       </SafeAreaView>
     );
@@ -246,38 +226,34 @@ export default function ResumePreviewScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={styles.backText}>← Customize</Text>
-        </TouchableOpacity>
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          PDF Resume Preview
-        </Text>
-        <View style={{ width: 40 }} />
-      </View>
+      <AppHeader
+        title="Resume Preview"
+        subtitle={job.company}
+        showBack
+      />
 
       <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-        {/* Job & Target Info Card */}
-        <View style={styles.heroCard}>
+        {/* Hero Info Card */}
+        <Card style={styles.heroCard}>
           <View style={styles.heroTopRow}>
             <View style={styles.heroTitleArea}>
-              <Text style={styles.heroRole}>{customizedResume.targetRole}</Text>
-              <Text style={styles.heroCompany}>{customizedResume.targetCompany}</Text>
+              <Text style={Typography.screenTitle} numberOfLines={1}>
+                {customizedResume.targetRole}
+              </Text>
+              <Text style={[Typography.itemTitle, { color: Colors.primary, marginTop: 2 }]} numberOfLines={1}>
+                {customizedResume.targetCompany}
+              </Text>
             </View>
             <View style={styles.matchBadge}>
               <Text style={styles.matchBadgeText}>{customizedResume.overallMatchScore}% Match</Text>
             </View>
           </View>
-          <Text style={styles.heroSubtext}>
-            ATS-compliant PDF resume generated directly from your verified Profile.
-          </Text>
-        </View>
+        </Card>
 
         {/* Version History Selector */}
         {versions.length > 0 && (
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>📑 Resume Versions ({versions.length})</Text>
+          <Card style={styles.card}>
+            <Text style={Typography.sectionTitle}>Versions ({versions.length})</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -310,59 +286,56 @@ export default function ResumePreviewScreen() {
                 );
               })}
             </ScrollView>
-          </View>
+          </Card>
         )}
 
         {/* Active PDF Status & Actions */}
         {selectedVersion?.generationStatus === 'Generated' && selectedVersion.pdfPath ? (
-          <View style={styles.readyCard}>
-            <View style={styles.readyHeaderRow}>
-              <View style={styles.readyTitleArea}>
-                <Text style={styles.readyTitle}>✓ PDF Resume Ready</Text>
-                <Text style={styles.readySubtext}>
-                  Version v{selectedVersion.versionNumber} saved to on-device storage.
-                </Text>
-              </View>
-              <View style={styles.pdfBadge}>
-                <Text style={styles.pdfBadgeText}>PDF</Text>
+          <Card style={styles.card}>
+            <View style={styles.readyRow}>
+              <Feather name="check-circle" size={IconSizes.sm} color={Colors.successText} />
+              <View style={{ flex: 1 }}>
+                <Text style={Typography.bodyMedium}>Resume PDF Ready (v{selectedVersion.versionNumber})</Text>
+                <Text style={Typography.caption}>Saved to on-device storage</Text>
               </View>
             </View>
 
-            <View style={styles.primaryActionRow}>
-              <TouchableOpacity
-                style={styles.openPdfBtn}
-                activeOpacity={0.8}
-                onPress={handleOpenPdf}>
-                <Text style={styles.openPdfBtnText}>👁️ Preview / Open PDF</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.sharePdfBtn}
-                activeOpacity={0.8}
-                onPress={handleOpenPdf}>
-                <Text style={styles.sharePdfBtnText}>📤 Share</Text>
-              </TouchableOpacity>
+            <View style={styles.actionRow}>
+              <PrimaryButton
+                title="Preview PDF"
+                icon="eye"
+                onPress={handleOpenPdf}
+                style={{ flex: 1 }}
+              />
+              <SecondaryButton
+                title="Share"
+                icon="share-2"
+                onPress={handleOpenPdf}
+                style={{ flex: 1 }}
+              />
             </View>
 
-            <TouchableOpacity
-              style={styles.composeEmailBtn}
-              activeOpacity={0.8}
-              onPress={() => router.push(`/jobs/email/${job.id}`)}>
-              <Text style={styles.composeEmailBtnText}>✉️ Compose Application Email →</Text>
-            </TouchableOpacity>
-          </View>
+            <SecondaryButton
+              title="Compose Application Email"
+              icon="mail"
+              onPress={() => router.push(`/jobs/email/${job.id}`)}
+              style={{ marginTop: Spacing.sm }}
+            />
+          </Card>
         ) : selectedVersion?.generationStatus === 'Failed' ? (
-          <View style={styles.failedCard}>
-            <Text style={styles.failedTitle}>✕ PDF Generation Failed</Text>
-            <Text style={styles.failedSubtext}>
-              The LaTeX compiler encountered an issue. You can review the error log below or try again.
+          <Card style={styles.card}>
+            <Text style={[Typography.sectionTitle, { color: Colors.errorText }]}>
+              Compilation Failed
+            </Text>
+            <Text style={[Typography.caption, { marginVertical: Spacing.xs }]}>
+              The LaTeX compiler encountered an issue.
             </Text>
             {selectedVersion.errorLog && (
               <TouchableOpacity
                 style={styles.toggleLogBtn}
                 onPress={() => setShowErrorLog(!showErrorLog)}>
                 <Text style={styles.toggleLogText}>
-                  {showErrorLog ? '▲ Hide Compiler Logs' : '▼ View Compiler Error Logs'}
+                  {showErrorLog ? 'Hide Logs' : 'View Error Logs'}
                 </Text>
               </TouchableOpacity>
             )}
@@ -371,60 +344,48 @@ export default function ResumePreviewScreen() {
                 <Text style={styles.errorLogText}>{selectedVersion.errorLog}</Text>
               </View>
             ) : null}
-          </View>
+          </Card>
         ) : null}
 
         {/* Action: Generate / Regenerate PDF Resume */}
-        <View style={styles.actionCard}>
-          <Text style={styles.actionCardTitle}>
-            {selectedVersion ? '⚡ Regenerate or Update' : '🚀 Ready to Generate PDF'}
+        <Card style={styles.card}>
+          <Text style={Typography.sectionTitle}>
+            {selectedVersion ? 'Regenerate Resume' : 'Generate PDF Resume'}
           </Text>
-          <Text style={styles.actionCardSubtext}>
-            {selectedVersion
-              ? 'Regenerating will compile the latest Profile details into a new version without overwriting existing ones.'
-              : 'Compile your selected skills, experience, and projects into a professional PDF document.'}
+          <Text style={[Typography.caption, { marginVertical: Spacing.xs }]}>
+            Compiles your verified profile into ATS-compliant master LaTeX template.
           </Text>
 
           {isGenerating ? (
             <View style={styles.generatingBox}>
-              <ActivityIndicator size="small" color="#2563EB" />
-              <Text style={styles.generatingText}>{generationStep || 'Compiling resume...'}</Text>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={Typography.caption}>{generationStep || 'Compiling resume...'}</Text>
             </View>
           ) : (
-            <TouchableOpacity
-              style={styles.generateBtn}
-              activeOpacity={0.8}
-              onPress={handleGenerateResume}>
-              <Text style={styles.generateBtnText}>
-                {selectedVersion
-                  ? '↻ Generate New Version'
-                  : '✨ Generate PDF Resume'}
-              </Text>
-            </TouchableOpacity>
+            <PrimaryButton
+              title={selectedVersion ? 'Generate New Version' : 'Generate PDF Resume'}
+              icon="file-text"
+              onPress={handleGenerateResume}
+              style={{ marginTop: Spacing.sm }}
+            />
           )}
-        </View>
+        </Card>
 
         {/* LaTeX Source Viewer */}
-        {selectedVersion ? (
-          <View style={styles.card}>
-            <View style={styles.codeHeaderRow}>
-              <View>
-                <Text style={styles.sectionTitle}>
-                  LaTeX Source (v{selectedVersion.versionNumber})
-                </Text>
-                <Text style={styles.codeDate}>
-                  Generated on{' '}
-                  {new Date(selectedVersion.createdAt).toLocaleTimeString(undefined, {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </Text>
-              </View>
+        {selectedVersion && (
+          <Card style={styles.card}>
+            <View style={styles.latexHeaderRow}>
+              <Text style={Typography.sectionTitle}>LaTeX Source (v{selectedVersion.versionNumber})</Text>
               <TouchableOpacity
                 style={[styles.copyBtn, isCopied && styles.copyBtnSuccess]}
                 onPress={handleCopyLatex}>
+                <Feather
+                  name={isCopied ? 'check' : 'copy'}
+                  size={12}
+                  color={isCopied ? Colors.successText : Colors.textSecondary}
+                />
                 <Text style={[styles.copyBtnText, isCopied && styles.copyBtnTextSuccess]}>
-                  {isCopied ? '✓ Copied' : '📋 Copy Source'}
+                  {isCopied ? 'Copied' : 'Copy'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -439,51 +400,8 @@ export default function ResumePreviewScreen() {
                 </Text>
               </ScrollView>
             </View>
-          </View>
-        ) : (
-          /* Pre-Generation Summary Review */
-          <View style={styles.card}>
-            <Text style={styles.sectionTitle}>📋 Content to be Compiled</Text>
-            <View style={styles.previewList}>
-              <View style={styles.previewItem}>
-                <Text style={styles.previewKey}>Candidate Name:</Text>
-                <Text style={styles.previewVal}>
-                  {customizedResume.personalDetails.fullName || 'Not specified'}
-                </Text>
-              </View>
-              <View style={styles.previewItem}>
-                <Text style={styles.previewKey}>Selected Skills:</Text>
-                <Text style={styles.previewVal}>{customizedResume.skills.length} skills</Text>
-              </View>
-              <View style={styles.previewItem}>
-                <Text style={styles.previewKey}>Selected Experience:</Text>
-                <Text style={styles.previewVal}>{customizedResume.experience.length} entries</Text>
-              </View>
-              <View style={styles.previewItem}>
-                <Text style={styles.previewKey}>Selected Projects:</Text>
-                <Text style={styles.previewVal}>{customizedResume.projects.length} projects</Text>
-              </View>
-              <View style={styles.previewItem}>
-                <Text style={styles.previewKey}>Education:</Text>
-                <Text style={styles.previewVal}>{customizedResume.education.length} entries</Text>
-              </View>
-              <View style={styles.previewItem}>
-                <Text style={styles.previewKey}>Certifications:</Text>
-                <Text style={styles.previewVal}>
-                  {customizedResume.certifications.length} credentials
-                </Text>
-              </View>
-            </View>
-          </View>
+          </Card>
         )}
-
-        {/* Local Storage & Sharing Notice */}
-        <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>🔒 Persistent Local Storage</Text>
-          <Text style={styles.infoText}>
-            Generated PDF resumes and LaTeX source code are stored permanently on your device in SQLite and the file system. They remain accessible even after restarting the app.
-          </Text>
-        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -492,424 +410,167 @@ export default function ResumePreviewScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#FFFFFF',
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
-  },
-  headerTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0F172A',
-    flex: 1,
-    textAlign: 'center',
-  },
-  backBtn: {
-    padding: 6,
-  },
-  backText: {
-    fontSize: 15,
-    color: '#2563EB',
-    fontWeight: '600',
+    backgroundColor: Colors.background,
   },
   container: {
     flex: 1,
   },
   scrollContent: {
-    padding: 16,
-    paddingBottom: 40,
+    padding: Spacing.lg,
+    paddingBottom: Spacing.xxxl,
   },
   loadingContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
-  },
-  loadingText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '500',
+    gap: Spacing.sm,
   },
   emptyContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 8,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#64748B',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  returnBtn: {
-    backgroundColor: '#2563EB',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 8,
-  },
-  returnBtnText: {
-    color: '#FFFFFF',
-    fontWeight: '600',
-    fontSize: 14,
+    padding: Spacing.xxl,
+    gap: Spacing.lg,
   },
   heroCard: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    padding: 16,
-    marginBottom: 16,
+    marginBottom: Spacing.lg,
   },
   heroTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 8,
+    gap: Spacing.sm,
   },
   heroTitleArea: {
     flex: 1,
-    marginRight: 10,
-  },
-  heroRole: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1E40AF',
-  },
-  heroCompany: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#2563EB',
-    marginTop: 2,
   },
   matchBadge: {
-    backgroundColor: '#DCFCE7',
+    backgroundColor: Colors.primaryLight,
     borderWidth: 1,
-    borderColor: '#BBF7D0',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    borderColor: Colors.primaryBorder,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 3,
   },
   matchBadgeText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#16A34A',
-  },
-  heroSubtext: {
-    fontSize: 12,
-    color: '#3B82F6',
-    lineHeight: 17,
+    color: Colors.primaryDark,
   },
   card: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 16,
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
+    marginBottom: Spacing.lg,
   },
   versionChipsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 10,
+    gap: Spacing.xs,
+    marginTop: Spacing.sm,
   },
   versionChip: {
-    backgroundColor: '#F8FAFC',
+    backgroundColor: Colors.surfaceSubtle,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 10,
-    paddingHorizontal: 12,
+    borderColor: Colors.border,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.md,
     paddingVertical: 6,
   },
   versionChipSelected: {
-    backgroundColor: '#2563EB',
-    borderColor: '#2563EB',
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
   },
   versionChipFailed: {
-    borderColor: '#FCA5A5',
-    backgroundColor: '#FEF2F2',
+    borderColor: Colors.errorBorder,
+    backgroundColor: Colors.errorBg,
   },
   versionChipText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#475569',
+    color: Colors.textSecondary,
   },
   versionChipTextSelected: {
-    color: '#FFFFFF',
+    color: Colors.textInverse,
   },
-  readyCard: {
-    backgroundColor: '#F0FDF4',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#BBF7D0',
-    padding: 16,
-    marginBottom: 16,
-  },
-  readyHeaderRow: {
+  readyRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 14,
+    gap: Spacing.sm,
+    backgroundColor: Colors.successBg,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    marginBottom: Spacing.md,
   },
-  readyTitleArea: {
-    flex: 1,
-    marginRight: 10,
-  },
-  readyTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#166534',
-  },
-  readySubtext: {
-    fontSize: 12,
-    color: '#15803D',
-    marginTop: 2,
-  },
-  pdfBadge: {
-    backgroundColor: '#DCFCE7',
-    borderWidth: 1,
-    borderColor: '#86EFAC',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  pdfBadgeText: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#166534',
-  },
-  primaryActionRow: {
+  actionRow: {
     flexDirection: 'row',
-    gap: 10,
-  },
-  openPdfBtn: {
-    flex: 2,
-    backgroundColor: '#16A34A',
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  openPdfBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  sharePdfBtn: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#86EFAC',
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  sharePdfBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#166534',
-  },
-  composeEmailBtn: {
-    backgroundColor: '#2563EB',
-    borderRadius: 10,
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  composeEmailBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  failedCard: {
-    backgroundColor: '#FEF2F2',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    padding: 16,
-    marginBottom: 16,
-  },
-  failedTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#DC2626',
-    marginBottom: 4,
-  },
-  failedSubtext: {
-    fontSize: 12,
-    color: '#991B1B',
-    lineHeight: 17,
-    marginBottom: 10,
-  },
-  toggleLogBtn: {
-    paddingVertical: 4,
-    marginBottom: 8,
-  },
-  toggleLogText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#DC2626',
-  },
-  errorLogBox: {
-    backgroundColor: '#0F172A',
-    borderRadius: 8,
-    padding: 10,
-    maxHeight: 180,
-  },
-  errorLogText: {
-    color: '#F87171',
-    fontFamily: 'monospace',
-    fontSize: 11,
-    lineHeight: 15,
-  },
-  actionCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    padding: 16,
-    marginBottom: 16,
-  },
-  actionCardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 4,
-  },
-  actionCardSubtext: {
-    fontSize: 12,
-    color: '#64748B',
-    lineHeight: 17,
-    marginBottom: 12,
+    gap: Spacing.md,
   },
   generatingBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    backgroundColor: '#EFF6FF',
-    borderRadius: 10,
-    paddingVertical: 14,
+    gap: Spacing.sm,
+    backgroundColor: Colors.surfaceSubtle,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    marginTop: Spacing.sm,
   },
-  generatingText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#2563EB',
-  },
-  generateBtn: {
-    backgroundColor: '#2563EB',
-    borderRadius: 10,
-    paddingVertical: 13,
-    alignItems: 'center',
-  },
-  generateBtnText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  codeHeaderRow: {
+  latexHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  codeDate: {
-    fontSize: 11,
-    color: '#64748B',
-    marginTop: 2,
+    alignItems: 'center',
   },
   copyBtn: {
-    backgroundColor: '#EFF6FF',
-    borderWidth: 1,
-    borderColor: '#BFDBFE',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surfaceSubtle,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: Radius.sm,
+    gap: 4,
   },
   copyBtnSuccess: {
-    backgroundColor: '#DCFCE7',
-    borderColor: '#BBF7D0',
+    backgroundColor: Colors.successBg,
   },
   copyBtnText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
-    color: '#2563EB',
+    color: Colors.textSecondary,
   },
   copyBtnTextSuccess: {
-    color: '#16A34A',
+    color: Colors.successText,
   },
   codeBox: {
-    backgroundColor: '#0F172A',
-    borderRadius: 10,
-    padding: 12,
-    maxHeight: 280,
+    backgroundColor: Colors.textPrimary,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.md,
+    maxHeight: 200,
   },
   codeScroll: {
-    flexGrow: 0,
+    maxHeight: 180,
   },
   codeScrollContent: {
-    paddingBottom: 8,
+    paddingRight: Spacing.sm,
   },
   codeText: {
     color: '#E2E8F0',
     fontFamily: 'monospace',
     fontSize: 11,
-    lineHeight: 16,
+    lineHeight: 15,
   },
-  previewList: {
-    marginTop: 10,
-    gap: 8,
+  toggleLogBtn: {
+    paddingVertical: Spacing.xs,
   },
-  previewItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 4,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  previewKey: {
-    fontSize: 13,
-    color: '#64748B',
-  },
-  previewVal: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#0F172A',
-  },
-  infoCard: {
-    backgroundColor: '#EFF6FF',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
-    padding: 14,
-    marginBottom: 24,
-  },
-  infoTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#1E40AF',
-    marginBottom: 4,
-  },
-  infoText: {
+  toggleLogText: {
     fontSize: 12,
-    color: '#2563EB',
-    lineHeight: 18,
+    fontWeight: '600',
+    color: Colors.errorText,
+  },
+  errorLogBox: {
+    backgroundColor: Colors.textPrimary,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    marginTop: Spacing.xs,
+  },
+  errorLogText: {
+    color: '#FECACA',
+    fontFamily: 'monospace',
+    fontSize: 11,
   },
 });

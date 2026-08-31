@@ -1,5 +1,6 @@
 import { getDatabase } from '../database';
-import { ResumeGenerationStatus, ResumeVersion } from '@/services/latex/types';
+import { ResumeGenerationStatus, ResumeLibraryItem, ResumeVersion } from '@/services/latex/types';
+import { JobStatus } from '@/types/job';
 import { CustomizedResume } from '@/types/resume';
 
 interface ResumeVersionRow {
@@ -18,6 +19,22 @@ interface ResumeVersionRow {
   updated_at: string;
 }
 
+interface ResumeLibraryRow {
+  id: string;
+  job_id: string;
+  version_number: number;
+  template_version?: string | null;
+  target_role: string;
+  target_company: string;
+  pdf_path?: string | null;
+  generation_status?: string | null;
+  created_at: string;
+  updated_at: string;
+  job_status?: string | null;
+  job_company?: string | null;
+  job_role?: string | null;
+}
+
 function mapRowToVersion(row: ResumeVersionRow): ResumeVersion {
   return {
     id: row.id,
@@ -31,6 +48,24 @@ function mapRowToVersion(row: ResumeVersionRow): ResumeVersion {
     pdfPath: row.pdf_path || null,
     generationStatus: (row.generation_status as ResumeGenerationStatus) || 'Generated',
     errorLog: row.error_log || null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapRowToLibraryItem(row: ResumeLibraryRow): ResumeLibraryItem {
+  return {
+    id: row.id,
+    jobId: row.job_id,
+    versionNumber: row.version_number,
+    templateVersion: row.template_version || 'master-v1',
+    targetRole: row.target_role || row.job_role || 'Software Engineer',
+    targetCompany: row.target_company || row.job_company || 'Company',
+    pdfPath: row.pdf_path || null,
+    generationStatus: (row.generation_status as ResumeGenerationStatus) || 'Generated',
+    jobStatus: (row.job_status as JobStatus) || null,
+    jobCompany: row.job_company || null,
+    jobRole: row.job_role || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -125,6 +160,34 @@ export const resumeRepository = {
   },
 
   /**
+   * Retrieves all resume versions across all jobs for the Resume Library,
+   * joining with jobs to include live application status.
+   */
+  async getAllResumeVersions(): Promise<ResumeLibraryItem[]> {
+    const db = await getDatabase();
+    const rows = await db.getAllAsync<ResumeLibraryRow>(`
+      SELECT
+        rv.id,
+        rv.job_id,
+        rv.version_number,
+        rv.template_version,
+        rv.target_role,
+        rv.target_company,
+        rv.pdf_path,
+        rv.generation_status,
+        rv.created_at,
+        rv.updated_at,
+        j.status as job_status,
+        j.company as job_company,
+        j.role as job_role
+      FROM resume_versions rv
+      LEFT JOIN jobs j ON rv.job_id = j.id
+      ORDER BY rv.created_at DESC;
+    `);
+    return rows.map(mapRowToLibraryItem);
+  },
+
+  /**
    * Retrieves all resume versions for a specific job, ordered by newest first.
    */
   async getResumeVersions(jobId: string): Promise<ResumeVersion[]> {
@@ -149,6 +212,40 @@ export const resumeRepository = {
   },
 
   /**
+   * Retrieves a resume version by ID along with joined job status.
+   */
+  async getResumeLibraryDetails(id: string): Promise<(ResumeVersion & { jobStatus?: JobStatus | null }) | null> {
+    const db = await getDatabase();
+    const row = await db.getFirstAsync<ResumeVersionRow & { job_status?: string | null }>(`
+      SELECT
+        rv.id,
+        rv.job_id,
+        rv.version_number,
+        rv.template_version,
+        rv.target_role,
+        rv.target_company,
+        rv.latex_source,
+        rv.resume_json,
+        rv.pdf_path,
+        rv.generation_status,
+        rv.error_log,
+        rv.created_at,
+        rv.updated_at,
+        j.status as job_status
+      FROM resume_versions rv
+      LEFT JOIN jobs j ON rv.job_id = j.id
+      WHERE rv.id = ?;
+    `, id);
+
+    if (!row) return null;
+
+    return {
+      ...mapRowToVersion(row),
+      jobStatus: (row.job_status as JobStatus) || null,
+    };
+  },
+
+  /**
    * Retrieves a resume version by ID.
    */
   async getResumeVersion(id: string): Promise<ResumeVersion | null> {
@@ -161,10 +258,23 @@ export const resumeRepository = {
   },
 
   /**
-   * Deletes a resume version from SQLite.
+   * Deletes a resume version from SQLite and removes its PDF file if on disk.
    */
   async deleteResumeVersion(id: string): Promise<void> {
     const db = await getDatabase();
+    const version = await this.getResumeVersion(id);
+
     await db.runAsync('DELETE FROM resume_versions WHERE id = ?;', id);
+
+    if (version?.pdfPath) {
+      try {
+        const FileSystem = await import('expo-file-system/legacy');
+        if (FileSystem?.deleteAsync) {
+          await FileSystem.deleteAsync(version.pdfPath, { idempotent: true });
+        }
+      } catch {
+        // Non-blocking file deletion
+      }
+    }
   },
 };
