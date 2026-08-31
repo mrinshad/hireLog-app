@@ -1,10 +1,11 @@
 import { settingsRepository } from '@/database/repositories/settingsRepository';
 
 const DEFAULT_MODELS = [
-  'gemini-2.5-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash-lite',
   'gemini-3.7-flash',
-  'gemini-2.5-flash',
-  'gemini-2.5-pro',
+  'gemini-3.5-flash',
+  'gemini-3.1-pro-preview',
 ];
 
 let cachedActiveModels: string[] | null = null;
@@ -42,19 +43,24 @@ async function discoverActiveModels(apiKey: string): Promise<string[]> {
           )
           .map((m: any) => m.name.replace(/^models\//, ''));
 
-        // Rank models: flash first, then pro, newest first
-        const flashModels = supported
-          .filter((m: string) => m.includes('flash'))
-          .sort((a: string, b: string) => b.localeCompare(a));
-        const otherModels = supported
-          .filter((m: string) => !m.includes('flash'))
-          .sort((a: string, b: string) => b.localeCompare(a));
+        // Rank models: gemini-3.6-flash, gemini-3.5-flash-lite, gemini-3.7-flash first
+        const priorityOrder = [
+          'gemini-3.6-flash',
+          'gemini-3.5-flash-lite',
+          'gemini-3.7-flash',
+          'gemini-3.5-flash',
+          'gemini-3.1-pro-preview',
+        ];
 
-        const combined = [...flashModels, ...otherModels];
-        if (combined.length > 0) {
-          cachedActiveModels = combined;
+        const sorted = [
+          ...priorityOrder.filter((m: string) => supported.includes(m)),
+          ...supported.filter((m: string) => !priorityOrder.includes(m)),
+        ];
+
+        if (sorted.length > 0) {
+          cachedActiveModels = sorted;
           lastDiscoveryTime = now;
-          return combined;
+          return sorted;
         }
       }
     }
@@ -78,6 +84,7 @@ export class GeminiError extends Error {
     | 'NETWORK_ERROR'
     | 'AUTH_ERROR'
     | 'RATE_LIMIT'
+    | 'PREPAYMENT_DEPLETED'
     | 'TIMEOUT'
     | 'INVALID_RESPONSE'
     | 'UNKNOWN';
@@ -89,6 +96,7 @@ export class GeminiError extends Error {
       | 'NETWORK_ERROR'
       | 'AUTH_ERROR'
       | 'RATE_LIMIT'
+      | 'PREPAYMENT_DEPLETED'
       | 'TIMEOUT'
       | 'INVALID_RESPONSE'
       | 'UNKNOWN'
@@ -211,7 +219,12 @@ export const geminiClient = {
         const errorMessage =
           errorData?.error?.message || `Gemini API returned error code ${response.status}`;
 
-        if (response.status === 401 || response.status === 403) {
+        if (errorMessage.includes('prepayment credits are depleted')) {
+          throw new GeminiError(
+            'Your Google AI Studio project credits are depleted. Please top up your balance at https://ai.studio or generate a new API key from a free-tier Google AI Studio project.',
+            'PREPAYMENT_DEPLETED'
+          );
+        } else if (response.status === 401 || response.status === 403) {
           throw new GeminiError(
             'Invalid or unauthorized Gemini API key. Please check your key in Settings.',
             'AUTH_ERROR'
