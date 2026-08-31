@@ -16,6 +16,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { AppHeader } from '@/components/common/AppHeader';
 import { Card } from '@/components/common/Card';
 import { PrimaryButton, SecondaryButton } from '@/components/common/Buttons';
+import { ResumeDocumentSheet } from '@/components/resume/ResumeDocumentSheet';
 import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
 import { AppDialog, AppToast } from '@/context/DialogContext';
 import { jobRepository } from '@/database/repositories/jobRepository';
@@ -44,34 +45,47 @@ export default function ResumePreviewScreen() {
   const [isApproving, setIsApproving] = useState(false);
   const [generationStep, setGenerationStep] = useState<string>('');
   const [isCopied, setIsCopied] = useState(false);
+  const [showLatexCode, setShowLatexCode] = useState(false);
 
   const loadData = async () => {
     if (!id) return;
     try {
       setIsLoading(true);
-      const jobData = await jobRepository.getJob(id);
-      setJob(jobData);
+      const [jobData, existingVersions] = await Promise.all([
+        jobRepository.getJob(id),
+        resumeRepository.getResumeVersions(id),
+      ]);
 
-      if (!jobData || !jobData.analysis) {
-        setIsLoading(false);
-        return;
+      setJob(jobData);
+      setVersions(existingVersions);
+
+      if (existingVersions.length > 0) {
+        const approvedVer = existingVersions.find((v) => v.id === jobData?.approvedResumeVersionId);
+        const activeVer = approvedVer || existingVersions[0];
+        setSelectedVersion(activeVer);
+
+        // Parse resume JSON directly from SQLite
+        try {
+          if (activeVer.resumeJson) {
+            const parsed = JSON.parse(activeVer.resumeJson) as CustomizedResume;
+            setCustomizedResume(parsed);
+          }
+        } catch {
+          // ignore parse error
+        }
       }
 
-      const profile = await profileRepository.getProfile();
-      const matchResult = jobData.matchResult || matchingEngine.match(profile, jobData.analysis);
-      const tailored = resumeCustomizer.customize(
-        profile,
-        jobData.analysis,
-        matchResult,
-        jobData.id
-      );
-      setCustomizedResume(tailored);
-
-      const existingVersions = await resumeRepository.getResumeVersions(jobData.id);
-      setVersions(existingVersions);
-      if (existingVersions.length > 0) {
-        const approvedVer = existingVersions.find((v) => v.id === jobData.approvedResumeVersionId);
-        setSelectedVersion(approvedVer || existingVersions[0]);
+      // If customizedResume not yet set from versions, build it from profile & analysis
+      if (!customizedResume && jobData?.analysis) {
+        const profile = await profileRepository.getProfile();
+        const matchResult = jobData.matchResult || matchingEngine.match(profile, jobData.analysis);
+        const tailored = resumeCustomizer.customize(
+          profile,
+          jobData.analysis,
+          matchResult,
+          jobData.id
+        );
+        setCustomizedResume(tailored);
       }
     } catch (error) {
       console.error('Failed to load resume preview data:', error);
@@ -84,6 +98,18 @@ export default function ResumePreviewScreen() {
   useEffect(() => {
     loadData();
   }, [id]);
+
+  const handleSelectVersion = (ver: ResumeVersion) => {
+    setSelectedVersion(ver);
+    if (ver.resumeJson) {
+      try {
+        const parsed = JSON.parse(ver.resumeJson) as CustomizedResume;
+        setCustomizedResume(parsed);
+      } catch {
+        // ignore
+      }
+    }
+  };
 
   const handleApproveAndContinue = async () => {
     if (!job || !selectedVersion) return;
@@ -115,22 +141,39 @@ export default function ResumePreviewScreen() {
   };
 
   const handleGenerateNewVersion = async () => {
-    if (!job || !customizedResume) return;
+    if (!job) return;
 
     try {
       setIsGenerating(true);
 
-      setGenerationStep('Validating against Profile...');
       const profile = await profileRepository.getProfile();
-      resumeValidator.validate(profile, customizedResume);
+      const matchResult =
+        job.matchResult ||
+        (job.analysis ? matchingEngine.match(profile, job.analysis) : null);
+
+      if (!job.analysis || !matchResult) {
+        throw new Error('Job description has not been analyzed yet.');
+      }
+
+      setGenerationStep('Tailoring resume...');
+      const tailored = resumeCustomizer.customize(
+        profile,
+        job.analysis,
+        matchResult,
+        job.id
+      );
+
+      setGenerationStep('Validating against Profile...');
+      resumeValidator.validate(profile, tailored);
+      setCustomizedResume(tailored);
 
       setGenerationStep('Rendering LaTeX markup...');
-      const latexSource = latexRenderer.render(customizedResume);
+      const latexSource = latexRenderer.render(tailored);
 
       setGenerationStep('Saving version...');
       const newVersion = await resumeRepository.saveResumeVersion(
         job.id,
-        customizedResume,
+        tailored,
         latexSource,
         null,
         'Compiling',
@@ -189,7 +232,7 @@ export default function ResumePreviewScreen() {
     }
   };
 
-  const handleOpenPdf = async () => {
+  const handleOpenWith = async () => {
     if (!selectedVersion?.pdfPath) {
       AppDialog.alert('PDF Not Available', 'PDF file has not been compiled yet.');
       return;
@@ -199,7 +242,7 @@ export default function ResumePreviewScreen() {
       const isAvailable = await Sharing.isAvailableAsync();
       if (!isAvailable) {
         AppDialog.alert(
-          'Document Viewer Unavailable',
+          'App Selector Unavailable',
           'Document viewing is not available on this platform.'
         );
         return;
@@ -207,7 +250,7 @@ export default function ResumePreviewScreen() {
 
       await Sharing.shareAsync(selectedVersion.pdfPath, {
         mimeType: 'application/pdf',
-        dialogTitle: `Resume - ${selectedVersion.targetRole}`,
+        dialogTitle: 'Open With...',
         UTI: 'com.adobe.pdf',
       });
     } catch (error: any) {
@@ -234,19 +277,19 @@ export default function ResumePreviewScreen() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={Typography.caption}>Loading resume preview...</Text>
+          <Text style={Typography.caption}>Loading resume...</Text>
         </View>
       </SafeAreaView>
     );
   }
 
-  if (!job || !customizedResume) {
+  if (!job) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <AppHeader title="Resume Preview" showBack />
         <View style={styles.emptyContainer}>
-          <Text style={Typography.sectionTitle}>Application Not Ready</Text>
-          <PrimaryButton title="Return to Job" icon="arrow-left" onPress={() => router.back()} />
+          <Text style={Typography.sectionTitle}>Application Not Found</Text>
+          <PrimaryButton title="Return to Jobs" icon="arrow-left" onPress={() => router.replace('/jobs')} />
         </View>
       </SafeAreaView>
     );
@@ -264,20 +307,22 @@ export default function ResumePreviewScreen() {
       />
 
       <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-        {/* Hero Info Card */}
+        {/* Header Hero Card */}
         <Card style={styles.heroCard}>
           <View style={styles.heroTopRow}>
             <View style={styles.heroTitleArea}>
               <Text style={Typography.screenTitle} numberOfLines={1}>
-                {customizedResume.targetRole}
+                {customizedResume?.targetRole || job.role || 'Tailored Resume'}
               </Text>
               <Text style={[Typography.itemTitle, { color: Colors.primary, marginTop: 2 }]} numberOfLines={1}>
-                {customizedResume.targetCompany}
+                {customizedResume?.targetCompany || job.company || 'Company'}
               </Text>
             </View>
-            <View style={styles.matchBadge}>
-              <Text style={styles.matchBadgeText}>{customizedResume.overallMatchScore}% Match</Text>
-            </View>
+            {customizedResume?.overallMatchScore !== undefined && (
+              <View style={styles.matchBadge}>
+                <Text style={styles.matchBadgeText}>{customizedResume.overallMatchScore}% Match</Text>
+              </View>
+            )}
           </View>
 
           {isApproved && (
@@ -292,7 +337,7 @@ export default function ResumePreviewScreen() {
         <Card style={styles.approvalGateCard}>
           <Text style={Typography.sectionTitle}>Review & Approve Resume</Text>
           <Text style={[Typography.caption, { marginVertical: Spacing.xs }]}>
-            Review the tailored PDF resume below. Approving will automatically prepare the application email.
+            Review the tailored resume below. Approving will automatically prepare the application email.
           </Text>
 
           {isPdfReady ? (
@@ -307,17 +352,17 @@ export default function ResumePreviewScreen() {
               />
               <View style={styles.subActionRow}>
                 <SecondaryButton
-                  title="Preview PDF"
-                  icon="eye"
+                  title="Open With"
+                  icon="external-link"
                   size="sm"
-                  onPress={handleOpenPdf}
+                  onPress={handleOpenWith}
                   style={{ flex: 1 }}
                 />
                 <SecondaryButton
-                  title="Share"
-                  icon="share-2"
+                  title={showLatexCode ? 'Hide LaTeX' : 'View LaTeX'}
+                  icon="code"
                   size="sm"
-                  onPress={handleOpenPdf}
+                  onPress={() => setShowLatexCode(!showLatexCode)}
                   style={{ flex: 1 }}
                 />
               </View>
@@ -351,7 +396,7 @@ export default function ResumePreviewScreen() {
                       isSelected && styles.versionChipSelected,
                       ver.generationStatus === 'Failed' && styles.versionChipFailed,
                     ]}
-                    onPress={() => setSelectedVersion(ver)}>
+                    onPress={() => handleSelectVersion(ver)}>
                     <Text
                       style={[
                         styles.versionChipText,
@@ -367,6 +412,19 @@ export default function ResumePreviewScreen() {
             </ScrollView>
           </Card>
         )}
+
+        {/* =========================================================================
+            IN-APP VISUAL RESUME DOCUMENT SHEET
+            ========================================================================= */}
+        {customizedResume ? (
+          <View style={styles.documentContainer}>
+            <View style={styles.documentLabelRow}>
+              <Feather name="file-text" size={14} color={Colors.textSecondary} />
+              <Text style={Typography.sectionTitle}>Resume Document Preview</Text>
+            </View>
+            <ResumeDocumentSheet resume={customizedResume} />
+          </View>
+        ) : null}
 
         {/* Regenerate Option */}
         <Card style={styles.card}>
@@ -391,8 +449,8 @@ export default function ResumePreviewScreen() {
           )}
         </Card>
 
-        {/* LaTeX Source Inspector */}
-        {selectedVersion && (
+        {/* LaTeX Source Inspector (Collapsible) */}
+        {showLatexCode && selectedVersion && (
           <Card style={styles.card}>
             <View style={styles.latexHeaderRow}>
               <Text style={Typography.sectionTitle}>LaTeX Source (v{selectedVersion.versionNumber})</Text>
@@ -515,6 +573,16 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     borderRadius: Radius.md,
     marginTop: Spacing.sm,
+  },
+  documentContainer: {
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  documentLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.xs,
   },
   card: {
     marginBottom: Spacing.md,

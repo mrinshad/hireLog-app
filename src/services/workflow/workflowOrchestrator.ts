@@ -17,7 +17,7 @@ import { WorkflowExecutionResult, WorkflowProgress, WorkflowStepId } from './typ
 export const workflowOrchestrator = {
   /**
    * Automatically executes the application workflow from JD submission to Resume Review Gate.
-   * Resumes seamlessly from the last completed stage if previously interrupted.
+   * Resumes seamlessly from the last completed stage without re-running finished steps or re-spending Gemini tokens.
    */
   async startWorkflow(
     jobId: string,
@@ -55,6 +55,14 @@ export const workflowOrchestrator = {
 
     const completedSteps: WorkflowStepId[] = [];
 
+    // Pre-populate already completed steps to preserve progress and tokens
+    if (job.analysis && job.analysisStatus === 'Analyzed') {
+      completedSteps.push('ANALYZING_JD');
+    }
+    if (job.matchResult) {
+      completedSteps.push('MATCHING_PROFILE');
+    }
+
     const notify = (step: WorkflowStepId, title: string, index: number) => {
       onProgress?.({
         jobId,
@@ -75,14 +83,15 @@ export const workflowOrchestrator = {
 
       if (job.analysis && job.analysisStatus === 'Analyzed') {
         analysis = job.analysis;
-        completedSteps.push('ANALYZING_JD');
+        if (!completedSteps.includes('ANALYZING_JD')) {
+          completedSteps.push('ANALYZING_JD');
+        }
       } else {
         notify('ANALYZING_JD', 'Analyzing job description...', 1);
         await jobRepository.updateWorkflowState(jobId, 'ANALYZING_JD');
 
         analysis = await jdAnalyzer.analyze(job.jobDescription);
 
-        // Populate empty job metadata with extracted details where available
         const updates: any = {
           analysisStatus: 'Analyzed',
           analysis,
@@ -108,7 +117,9 @@ export const workflowOrchestrator = {
         }
 
         await jobRepository.updateJob(jobId, updates);
-        completedSteps.push('ANALYZING_JD');
+        if (!completedSteps.includes('ANALYZING_JD')) {
+          completedSteps.push('ANALYZING_JD');
+        }
       }
 
       // =========================================================================
@@ -118,7 +129,9 @@ export const workflowOrchestrator = {
 
       if (job.matchResult) {
         matchResult = job.matchResult;
-        completedSteps.push('MATCHING_PROFILE');
+        if (!completedSteps.includes('MATCHING_PROFILE')) {
+          completedSteps.push('MATCHING_PROFILE');
+        }
       } else {
         notify('MATCHING_PROFILE', 'Matching with your profile...', 2);
         await jobRepository.updateWorkflowState(jobId, 'MATCHING_PROFILE');
@@ -127,7 +140,9 @@ export const workflowOrchestrator = {
         matchResult = matchingEngine.match(profile, analysis);
 
         await jobRepository.updateJobMatch(jobId, matchResult);
-        completedSteps.push('MATCHING_PROFILE');
+        if (!completedSteps.includes('MATCHING_PROFILE')) {
+          completedSteps.push('MATCHING_PROFILE');
+        }
       }
 
       // =========================================================================
@@ -136,7 +151,9 @@ export const workflowOrchestrator = {
       const latestResume = await resumeRepository.getLatestResumeVersion(jobId);
 
       if (latestResume && latestResume.generationStatus === 'Generated' && latestResume.pdfPath) {
-        completedSteps.push('GENERATING_RESUME');
+        if (!completedSteps.includes('GENERATING_RESUME')) {
+          completedSteps.push('GENERATING_RESUME');
+        }
       } else {
         notify('GENERATING_RESUME', 'Preparing your tailored resume...', 3);
         await jobRepository.updateWorkflowState(jobId, 'GENERATING_RESUME');
@@ -166,7 +183,7 @@ export const workflowOrchestrator = {
           'master-v1'
         );
 
-        // Compile LaTeX to on-device PDF
+        // Compile LaTeX to PDF with multi-compiler fallback
         notify('GENERATING_RESUME', 'Generating PDF document...', 4);
         try {
           const { pdfPath } = await latexCompiler.compileToPdf(
@@ -182,7 +199,9 @@ export const workflowOrchestrator = {
             null
           );
 
-          completedSteps.push('GENERATING_RESUME');
+          if (!completedSteps.includes('GENERATING_RESUME')) {
+            completedSteps.push('GENERATING_RESUME');
+          }
         } catch (compileErr: any) {
           const errorLog =
             compileErr instanceof CompilerError
@@ -196,7 +215,7 @@ export const workflowOrchestrator = {
             errorLog
           );
 
-          throw new Error(`PDF Compilation Failed: ${compileErr.message || 'LaTeX error'}`);
+          throw new Error(`PDF Compilation Failed: ${compileErr.message || 'LaTeX compiler error'}`);
         }
       }
 
@@ -250,13 +269,21 @@ export const workflowOrchestrator = {
   },
 
   /**
-   * Retries a failed workflow stage without repeating previous successful steps.
+   * Retries a failed workflow stage without repeating previous successful steps or re-spending tokens.
    */
   async retryWorkflow(
     jobId: string,
     onProgress?: (progress: WorkflowProgress) => void
   ): Promise<WorkflowExecutionResult> {
-    await jobRepository.updateWorkflowState(jobId, 'CREATED', null, null);
+    const job = await jobRepository.getJob(jobId);
+    // Determine resume state based on what's already saved
+    const resumeState = job?.matchResult
+      ? 'GENERATING_RESUME'
+      : job?.analysis && job.analysisStatus === 'Analyzed'
+      ? 'MATCHING_PROFILE'
+      : 'ANALYZING_JD';
+
+    await jobRepository.updateWorkflowState(jobId, resumeState, null, null);
     return this.startWorkflow(jobId, onProgress);
   },
 

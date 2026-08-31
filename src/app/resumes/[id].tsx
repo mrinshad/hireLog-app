@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,6 +16,7 @@ import Feather from '@expo/vector-icons/Feather';
 import { AppHeader } from '@/components/common/AppHeader';
 import { Card } from '@/components/common/Card';
 import { DestructiveButton, PrimaryButton, SecondaryButton } from '@/components/common/Buttons';
+import { ResumeDocumentSheet } from '@/components/resume/ResumeDocumentSheet';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
 import { AppDialog, AppToast } from '@/context/DialogContext';
@@ -31,12 +31,12 @@ export default function ResumeDetailsScreen() {
   const router = useRouter();
 
   const [resumeVersion, setResumeVersion] = useState<
-    (ResumeVersion & { jobStatus?: JobStatus | null }) | null
+    (ResumeVersion & { jobStatus?: JobStatus | null; isApproved?: boolean }) | null
   >(null);
   const [parsedResume, setParsedResume] = useState<CustomizedResume | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCopied, setIsCopied] = useState(false);
-  const [showLatex, setShowLatex] = useState(false);
+  const [showLatexCode, setShowLatexCode] = useState(false);
 
   const loadResumeDetails = async () => {
     if (!id) return;
@@ -45,7 +45,7 @@ export default function ResumeDetailsScreen() {
       const data = await resumeRepository.getResumeLibraryDetails(id);
       setResumeVersion(data);
 
-      if (data?.resumeJson) {
+      if (data && data.resumeJson) {
         try {
           const parsed = JSON.parse(data.resumeJson) as CustomizedResume;
           setParsedResume(parsed);
@@ -65,7 +65,7 @@ export default function ResumeDetailsScreen() {
     loadResumeDetails();
   }, [id]);
 
-  const handleOpenPdf = async () => {
+  const handleOpenWith = async () => {
     if (!resumeVersion?.pdfPath) {
       AppDialog.alert('PDF Not Available', 'PDF file has not been compiled yet.');
       return;
@@ -75,7 +75,7 @@ export default function ResumeDetailsScreen() {
       const isAvailable = await Sharing.isAvailableAsync();
       if (!isAvailable) {
         AppDialog.alert(
-          'Viewer Unavailable',
+          'App Selector Unavailable',
           'Document viewing is not available on this platform.'
         );
         return;
@@ -83,7 +83,7 @@ export default function ResumeDetailsScreen() {
 
       await Sharing.shareAsync(resumeVersion.pdfPath, {
         mimeType: 'application/pdf',
-        dialogTitle: `Resume - ${resumeVersion.targetRole}`,
+        dialogTitle: 'Open With...',
         UTI: 'com.adobe.pdf',
       });
     } catch (error: any) {
@@ -144,17 +144,13 @@ export default function ResumeDetailsScreen() {
         <AppHeader title="Resume Details" showBack />
         <View style={styles.emptyContainer}>
           <Text style={Typography.sectionTitle}>Resume Not Found</Text>
-          <PrimaryButton
-            title="Return to Library"
-            icon="arrow-left"
-            onPress={() => router.replace('/resumes')}
-          />
+          <PrimaryButton title="Return to Library" icon="arrow-left" onPress={() => router.replace('/resumes')} />
         </View>
       </SafeAreaView>
     );
   }
 
-  const isPdfReady = resumeVersion.generationStatus === 'Generated' && !!resumeVersion.pdfPath;
+  const isSuccess = resumeVersion.generationStatus === 'Generated' && !!resumeVersion.pdfPath;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -170,10 +166,10 @@ export default function ResumeDetailsScreen() {
           <View style={styles.heroTopRow}>
             <View style={styles.heroTitleArea}>
               <Text style={Typography.screenTitle} numberOfLines={1}>
-                {resumeVersion.targetRole || 'Software Professional'}
+                {resumeVersion.targetRole || 'Tailored Resume'}
               </Text>
               <Text style={[Typography.itemTitle, { color: Colors.primary, marginTop: 2 }]} numberOfLines={1}>
-                {resumeVersion.targetCompany || 'Company not specified'}
+                {resumeVersion.targetCompany || 'Company'}
               </Text>
             </View>
             <View style={styles.versionBadge}>
@@ -181,119 +177,88 @@ export default function ResumeDetailsScreen() {
             </View>
           </View>
 
-          <View style={styles.metaGrid}>
-            <View style={styles.metaCol}>
-              <Text style={Typography.caption}>Generated</Text>
-              <Text style={Typography.bodyMedium}>
-                {new Date(resumeVersion.createdAt).toLocaleDateString()} ({formatRelativeDate(resumeVersion.createdAt)})
-              </Text>
-            </View>
-            <View style={styles.metaCol}>
-              <Text style={Typography.caption}>Template</Text>
-              <Text style={[Typography.bodyMedium, styles.monoText]}>
-                {resumeVersion.templateVersion || 'master-v1'}
-              </Text>
-            </View>
+          <View style={styles.metaRow}>
+            <Text style={Typography.caption}>
+              Created {formatRelativeDate(resumeVersion.createdAt)}
+            </Text>
+            <Text style={styles.templateTag}>{resumeVersion.templateVersion || 'master-v1'}</Text>
           </View>
 
-          {resumeVersion.jobStatus && (
-            <View style={styles.applicationStatusRow}>
-              <Text style={Typography.caption}>Application Stage:</Text>
-              <StatusBadge status={resumeVersion.jobStatus} size="sm" />
-              <TouchableOpacity
-                style={styles.openJobLink}
-                onPress={() => router.push(`/jobs/${resumeVersion.jobId}`)}>
-                <Text style={styles.openJobLinkText}>View Job</Text>
-                <Feather name="chevron-right" size={13} color={Colors.primary} />
-              </TouchableOpacity>
-            </View>
-          )}
-        </Card>
-
-        {/* PDF Actions */}
-        <Card style={styles.card}>
-          <Text style={Typography.sectionTitle}>PDF Document</Text>
-          {isPdfReady ? (
-            <>
-              <View style={styles.pdfReadyRow}>
-                <Feather name="check-circle" size={IconSizes.sm} color={Colors.successText} />
-                <Text style={styles.pdfReadyText}>Compiled and ready on device</Text>
+          <View style={styles.statusRow}>
+            {resumeVersion.isApproved && (
+              <View style={styles.approvedPill}>
+                <Feather name="check" size={12} color={Colors.successText} />
+                <Text style={styles.approvedPillText}>Approved for Application</Text>
               </View>
+            )}
 
-              <View style={styles.pdfActionsRow}>
-                <PrimaryButton
-                  title="Preview PDF"
-                  icon="eye"
-                  onPress={handleOpenPdf}
-                  style={styles.flexBtn}
-                />
-                <SecondaryButton
-                  title="Share"
-                  icon="share-2"
-                  onPress={handleOpenPdf}
-                  style={styles.flexBtn}
-                />
+            {resumeVersion.jobStatus && (
+              <View style={styles.jobStatusArea}>
+                <Text style={Typography.caption}>Job Status: </Text>
+                <StatusBadge status={resumeVersion.jobStatus} size="sm" />
               </View>
-            </>
-          ) : (
-            <View style={styles.pdfUnavailableBox}>
-              <Text style={styles.pdfUnavailableTitle}>PDF Not Available</Text>
-              <Text style={Typography.caption}>
-                {resumeVersion.generationStatus === 'Failed'
-                  ? 'PDF compilation failed for this version.'
-                  : 'PDF has not been compiled yet.'}
-              </Text>
+            )}
+          </View>
+
+          {/* Action Row */}
+          <View style={styles.actionRow}>
+            {isSuccess && (
               <PrimaryButton
-                title="Open Job Resume Screen"
-                icon="file-text"
-                size="sm"
-                onPress={() => router.push(`/jobs/resume/${resumeVersion.jobId}`)}
-                style={{ marginTop: Spacing.sm }}
+                title="Open With"
+                icon="external-link"
+                size="md"
+                onPress={handleOpenWith}
+                style={{ flex: 1 }}
               />
-            </View>
-          )}
+            )}
+            <SecondaryButton
+              title={showLatexCode ? 'Hide LaTeX' : 'View LaTeX'}
+              icon="code"
+              size="md"
+              onPress={() => setShowLatexCode(!showLatexCode)}
+              style={{ flex: 1 }}
+            />
+          </View>
         </Card>
 
-        {/* Snapshot Summary */}
-        {parsedResume && (
+        {/* =========================================================================
+            IN-APP VISUAL RESUME DOCUMENT SHEET
+            ========================================================================= */}
+        {parsedResume ? (
+          <View style={styles.documentContainer}>
+            <View style={styles.documentLabelRow}>
+              <Feather name="file-text" size={14} color={Colors.textSecondary} />
+              <Text style={Typography.sectionTitle}>Resume Document Preview</Text>
+            </View>
+            <ResumeDocumentSheet resume={parsedResume} />
+          </View>
+        ) : null}
+
+        {/* Associated Job Link Card */}
+        {resumeVersion.jobId && (
           <Card style={styles.card}>
-            <Text style={Typography.sectionTitle}>Stored Version Snapshot</Text>
-            <View style={styles.contentGrid}>
-              <View style={styles.contentRow}>
-                <Text style={Typography.caption}>Candidate</Text>
-                <Text style={Typography.bodyMedium}>
-                  {parsedResume.personalDetails?.fullName || 'Candidate'}
+            <View style={styles.jobLinkRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={Typography.sectionTitle}>Target Application</Text>
+                <Text style={[Typography.caption, { marginTop: 2 }]}>
+                  View and manage the full job application pipeline.
                 </Text>
               </View>
-              <View style={styles.contentRow}>
-                <Text style={Typography.caption}>Skills Selected</Text>
-                <Text style={Typography.bodyMedium}>{parsedResume.skills?.length || 0} skills</Text>
-              </View>
-              <View style={styles.contentRow}>
-                <Text style={Typography.caption}>Experience</Text>
-                <Text style={Typography.bodyMedium}>{parsedResume.experience?.length || 0} positions</Text>
-              </View>
-              <View style={styles.contentRow}>
-                <Text style={Typography.caption}>Projects</Text>
-                <Text style={Typography.bodyMedium}>{parsedResume.projects?.length || 0} projects</Text>
-              </View>
+              <SecondaryButton
+                title="View Job"
+                icon="arrow-right"
+                size="sm"
+                onPress={() => router.push(`/jobs/${resumeVersion.jobId}`)}
+              />
             </View>
           </Card>
         )}
 
-        {/* LaTeX Source Inspector */}
-        <Card style={styles.card}>
-          <View style={styles.latexHeaderRow}>
-            <TouchableOpacity
-              style={styles.latexToggleBtn}
-              onPress={() => setShowLatex(!showLatex)}>
-              <Feather name={showLatex ? 'chevron-up' : 'chevron-down'} size={IconSizes.sm} color={Colors.primary} />
-              <Text style={styles.latexToggleText}>
-                {showLatex ? 'Hide LaTeX Source' : 'View LaTeX Source'}
-              </Text>
-            </TouchableOpacity>
-
-            {showLatex && (
+        {/* LaTeX Source Inspector (Collapsible) */}
+        {showLatexCode && (
+          <Card style={styles.card}>
+            <View style={styles.latexHeaderRow}>
+              <Text style={Typography.sectionTitle}>LaTeX Source</Text>
               <TouchableOpacity
                 style={[styles.copyBtn, isCopied && styles.copyBtnSuccess]}
                 onPress={handleCopyLatex}>
@@ -306,10 +271,8 @@ export default function ResumeDetailsScreen() {
                   {isCopied ? 'Copied' : 'Copy'}
                 </Text>
               </TouchableOpacity>
-            )}
-          </View>
+            </View>
 
-          {showLatex && (
             <View style={styles.codeBox}>
               <ScrollView
                 nestedScrollEnabled
@@ -320,12 +283,12 @@ export default function ResumeDetailsScreen() {
                 </Text>
               </ScrollView>
             </View>
-          )}
-        </Card>
+          </Card>
+        )}
 
-        {/* Delete */}
+        {/* Delete Version */}
         <DestructiveButton
-          title="Delete This Version"
+          title="Delete Resume Version"
           onPress={handleDelete}
           style={styles.deleteBtn}
         />
@@ -345,6 +308,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: Spacing.lg,
     paddingBottom: Spacing.xxxl,
+    gap: Spacing.md,
   },
   loadingContainer: {
     flex: 1,
@@ -360,7 +324,7 @@ const styles = StyleSheet.create({
     gap: Spacing.lg,
   },
   heroCard: {
-    marginBottom: Spacing.lg,
+    gap: Spacing.md,
   },
   heroTopRow: {
     flexDirection: 'row',
@@ -376,7 +340,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.primaryBorder,
     borderRadius: Radius.sm,
-    paddingHorizontal: Spacing.sm,
+    paddingHorizontal: 8,
     paddingVertical: 3,
   },
   versionBadgeText: {
@@ -384,102 +348,72 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.primaryDark,
   },
-  metaGrid: {
+  metaRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    gap: Spacing.md,
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
-    borderTopWidth: 1,
-    borderTopColor: Colors.borderLight,
+    alignItems: 'center',
   },
-  metaCol: {
-    flex: 1,
-  },
-  monoText: {
+  templateTag: {
     fontFamily: 'monospace',
-    fontSize: 12,
+    fontSize: 11,
+    color: Colors.textMuted,
   },
-  applicationStatusRow: {
+  statusRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: Spacing.sm,
-    marginTop: Spacing.md,
-    paddingTop: Spacing.md,
+    paddingTop: Spacing.sm,
     borderTopWidth: 1,
     borderTopColor: Colors.borderLight,
   },
-  openJobLink: {
+  approvedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.successBg,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: Radius.sm,
+    gap: 4,
+  },
+  approvedPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.successText,
+  },
+  jobStatusArea: {
     flexDirection: 'row',
     alignItems: 'center',
     marginLeft: 'auto',
-    gap: 2,
+    gap: 4,
   },
-  openJobLinkText: {
-    fontSize: 13,
-    color: Colors.primary,
-    fontWeight: '600',
+  actionRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginTop: Spacing.xs,
+  },
+  documentContainer: {
+    gap: Spacing.sm,
+  },
+  documentLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.xs,
   },
   card: {
-    marginBottom: Spacing.lg,
+    gap: Spacing.sm,
   },
-  pdfReadyRow: {
+  jobLinkRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
-    backgroundColor: Colors.successBg,
-    padding: Spacing.md,
-    borderRadius: Radius.md,
-    marginVertical: Spacing.md,
-  },
-  pdfReadyText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.successText,
-  },
-  pdfActionsRow: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-  },
-  flexBtn: {
-    flex: 1,
-  },
-  pdfUnavailableBox: {
-    backgroundColor: Colors.errorBg,
-    padding: Spacing.md,
-    borderRadius: Radius.md,
-    marginVertical: Spacing.sm,
-  },
-  pdfUnavailableTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Colors.errorText,
-    marginBottom: 2,
-  },
-  contentGrid: {
-    gap: Spacing.sm,
-    marginTop: Spacing.md,
-  },
-  contentRow: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 2,
+    gap: Spacing.md,
   },
   latexHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-  },
-  latexToggleBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-  },
-  latexToggleText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.primary,
   },
   copyBtn: {
     flexDirection: 'row',
@@ -505,7 +439,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.textPrimary,
     borderRadius: Radius.md,
     padding: Spacing.md,
-    marginTop: Spacing.md,
+    marginTop: Spacing.sm,
     maxHeight: 200,
   },
   codeScroll: {
@@ -521,7 +455,7 @@ const styles = StyleSheet.create({
     lineHeight: 15,
   },
   deleteBtn: {
-    marginTop: Spacing.sm,
+    marginTop: Spacing.xs,
     marginBottom: Spacing.xxl,
   },
 });

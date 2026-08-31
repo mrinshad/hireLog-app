@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -10,20 +11,29 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import Feather from '@expo/vector-icons/Feather';
 
 import { AppHeader } from '@/components/common/AppHeader';
 import { Card } from '@/components/common/Card';
-import { PrimaryButton } from '@/components/common/Buttons';
+import { PrimaryButton, SecondaryButton } from '@/components/common/Buttons';
 import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
 import { AppDialog, AppToast } from '@/context/DialogContext';
 import { settingsRepository } from '@/database/repositories/settingsRepository';
+import { profileSeeder } from '@/services/profile/profileSeeder';
 
 export default function SettingsScreen() {
+  const router = useRouter();
+
   const [apiKey, setApiKey] = useState('');
   const [compilerUrl, setCompilerUrl] = useState('');
   const [isSecure, setIsSecure] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Password Gate Modal State
+  const [isPasswordModalVisible, setIsPasswordModalVisible] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadSettings() {
@@ -52,6 +62,41 @@ export default function SettingsScreen() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleOpenLoadProfile = () => {
+    setPasswordInput('');
+    setPasswordError(null);
+    setIsPasswordModalVisible(true);
+  };
+
+  const handleVerifyPassword = () => {
+    if (!profileSeeder.verifyPassword(passwordInput)) {
+      setPasswordError('Incorrect password');
+      return;
+    }
+
+    // Password is correct -> close password modal and prompt confirmation
+    setIsPasswordModalVisible(false);
+    setPasswordInput('');
+    setPasswordError(null);
+
+    AppDialog.confirm(
+      'Load user details?',
+      'This will add/replace the current profile information with the saved profile.',
+      async () => {
+        try {
+          await profileSeeder.seedOwnerProfile();
+          AppToast.show('Profile loaded successfully', 'success');
+          router.push('/(tabs)/profile');
+        } catch (err: any) {
+          console.error('Failed to load profile details:', err);
+          AppDialog.error('Seeding Error', err.message || 'Failed to load profile.');
+        }
+      },
+      'Load Details',
+      'Cancel'
+    );
   };
 
   return (
@@ -122,6 +167,25 @@ export default function SettingsScreen() {
             </View>
           </Card>
 
+          {/* Profile Management / Seeding */}
+          <Card style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <Feather name="user" size={IconSizes.md} color={Colors.primary} />
+              <Text style={Typography.sectionTitle}>Profile Data</Text>
+            </View>
+
+            <TouchableOpacity
+              style={styles.profileActionRow}
+              activeOpacity={0.7}
+              onPress={handleOpenLoadProfile}>
+              <View style={styles.profileActionTextContainer}>
+                <Text style={Typography.itemTitle}>Load My Profile</Text>
+                <Text style={Typography.caption}>Import the saved profile information</Text>
+              </View>
+              <Feather name="download" size={IconSizes.md} color={Colors.primary} />
+            </TouchableOpacity>
+          </Card>
+
           {/* Save Button */}
           <PrimaryButton
             title="Save Settings"
@@ -141,6 +205,56 @@ export default function SettingsScreen() {
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Lightweight Password Gate Modal */}
+      <Modal
+        visible={isPasswordModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsPasswordModalVisible(false)}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={Typography.screenTitle}>Load My Profile</Text>
+              <Text style={[Typography.caption, { marginTop: 2 }]}>Password</Text>
+            </View>
+
+            <TextInput
+              style={[styles.input, styles.passwordInput, !!passwordError && styles.inputError]}
+              placeholder="Password"
+              placeholderTextColor={Colors.textMuted}
+              secureTextEntry
+              keyboardType="number-pad"
+              autoFocus
+              value={passwordInput}
+              onChangeText={(text) => {
+                setPasswordInput(text);
+                if (passwordError) setPasswordError(null);
+              }}
+              onSubmitEditing={handleVerifyPassword}
+            />
+
+            {passwordError ? (
+              <Text style={styles.errorText}>{passwordError}</Text>
+            ) : null}
+
+            <View style={styles.modalActions}>
+              <SecondaryButton
+                title="Cancel"
+                onPress={() => setIsPasswordModalVisible(false)}
+                style={{ flex: 1 }}
+              />
+              <PrimaryButton
+                title="Continue"
+                onPress={handleVerifyPassword}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -190,6 +304,9 @@ const styles = StyleSheet.create({
   inputFlex: {
     flex: 1,
   },
+  inputError: {
+    borderColor: Colors.errorBorder,
+  },
   toggleBtn: {
     backgroundColor: Colors.surfaceSubtle,
     borderWidth: 1,
@@ -198,6 +315,20 @@ const styles = StyleSheet.create({
     padding: Spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  profileActionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.surfaceSubtle,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+  },
+  profileActionTextContainer: {
+    flex: 1,
+    gap: 2,
   },
   saveBtn: {
     marginTop: Spacing.sm,
@@ -217,5 +348,41 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.primaryDark,
     lineHeight: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Spacing.lg,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.lg,
+    padding: Spacing.xl,
+    gap: Spacing.md,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+  },
+  modalHeader: {
+    gap: 2,
+  },
+  passwordInput: {
+    marginTop: 4,
+  },
+  errorText: {
+    fontSize: 12,
+    color: Colors.errorText,
+    fontWeight: '600',
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginTop: Spacing.xs,
   },
 });

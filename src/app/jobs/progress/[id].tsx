@@ -48,6 +48,28 @@ export default function ApplicationProgressScreen() {
       const jobData = await jobRepository.getJob(id);
       setJob(jobData);
 
+      const initialCompleted: any[] = [];
+      if (jobData?.analysis && jobData.analysisStatus === 'Analyzed') {
+        initialCompleted.push('ANALYZING_JD');
+      }
+      if (jobData?.matchResult) {
+        initialCompleted.push('MATCHING_PROFILE');
+      }
+
+      setProgress({
+        jobId: id,
+        currentStep: initialCompleted.includes('MATCHING_PROFILE')
+          ? 'GENERATING_RESUME'
+          : initialCompleted.includes('ANALYZING_JD')
+          ? 'MATCHING_PROFILE'
+          : 'ANALYZING_JD',
+        stepTitle: 'Preparing application...',
+        stepIndex: initialCompleted.length + 1,
+        totalSteps: 4,
+        completedSteps: initialCompleted,
+        isError: false,
+      });
+
       const result = await workflowOrchestrator.startWorkflow(id, (p) => {
         setProgress(p);
       });

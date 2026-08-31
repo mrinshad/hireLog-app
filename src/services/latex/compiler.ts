@@ -1,8 +1,6 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { settingsRepository } from '@/database/repositories/settingsRepository';
 
-const DEFAULT_PUBLIC_COMPILER = 'https://latexonline.cc/compile';
-
 export class CompilerError extends Error {
   compilerLog: string;
 
@@ -28,7 +26,7 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 
 export const latexCompiler = {
   /**
-   * Compiles LaTeX source code into a PDF file and saves it to local device storage.
+   * Compiles LaTeX source code into a PDF file using a multi-service fallback pool.
    */
   async compileToPdf(
     latexSource: string,
@@ -39,76 +37,60 @@ export const latexCompiler = {
       throw new CompilerError('LaTeX source is empty.', 'Empty LaTeX document.');
     }
 
-    // 1. Resolve Compiler Endpoint
     const customUrl = await settingsRepository.getSetting('latex_compiler_url');
-    const compilerEndpoint = (customUrl && customUrl.trim()) || DEFAULT_PUBLIC_COMPILER;
 
-    // 2. Prepare HTTP request
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 50000); // 50s timeout
+    // Build ordered list of compilation strategies
+    const strategies: Array<{ name: string; compile: () => Promise<ArrayBuffer> }> = [];
 
-    let response: Response;
-    try {
-      if (compilerEndpoint.includes('latexonline.cc')) {
-        // latexonline accepts POST with text/plain body or URL encoded
-        response = await fetch(`${DEFAULT_PUBLIC_COMPILER}?text=${encodeURIComponent(latexSource)}`, {
-          method: 'GET',
-          signal: controller.signal,
-        });
-      } else {
-        // Standard JSON or raw POST for custom/local companion server
-        response = await fetch(compilerEndpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ latex: latexSource }),
-          signal: controller.signal,
-        });
-      }
-    } catch (networkError: any) {
-      clearTimeout(timeoutId);
-      if (networkError.name === 'AbortError' || controller.signal.aborted) {
-        throw new CompilerError(
-          'LaTeX compilation timed out after 50 seconds. Please check your connection and retry.',
-          'Request timed out.'
-        );
-      }
-      throw new CompilerError(
-        'Could not reach LaTeX compilation service. Please check your internet connection or custom compiler URL in Settings.',
-        networkError.message || 'Network connection failed.'
-      );
-    } finally {
-      clearTimeout(timeoutId);
+    if (customUrl && customUrl.trim()) {
+      strategies.push({
+        name: 'Custom User Endpoint',
+        compile: () => this.compileCustomEndpoint(customUrl.trim(), latexSource),
+      });
     }
 
-    // 3. Handle compilation response
-    if (!response.ok) {
-      let errorLog = '';
+    // Candidate 1: Rtex API (Fast, dedicated LaTeX compile engine)
+    strategies.push({
+      name: 'Rtex Engine',
+      compile: () => this.compileRtex(latexSource),
+    });
+
+    // Candidate 2: LaTeXOnline.cc
+    strategies.push({
+      name: 'LaTeX Online',
+      compile: () => this.compileLatexOnline(latexSource),
+    });
+
+    let lastError: Error | null = null;
+    let compiledBuffer: ArrayBuffer | null = null;
+
+    for (const strategy of strategies) {
       try {
-        errorLog = await response.text();
-      } catch {
-        errorLog = `Compiler returned HTTP status ${response.status}`;
+        console.log(`Attempting LaTeX compilation via ${strategy.name}...`);
+        compiledBuffer = await strategy.compile();
+        if (compiledBuffer && compiledBuffer.byteLength > 100) {
+          console.log(`LaTeX compilation succeeded via ${strategy.name} (${compiledBuffer.byteLength} bytes)`);
+          break;
+        }
+      } catch (err: any) {
+        console.warn(`Compilation failed via ${strategy.name}:`, err.message || err);
+        lastError = err;
       }
+    }
 
-      throw new CompilerError(
-        'LaTeX compilation failed. Please review the error log or adjust resume details.',
-        errorLog
+    if (!compiledBuffer || compiledBuffer.byteLength < 100) {
+      throw (
+        lastError ||
+        new CompilerError(
+          'LaTeX compilation service is currently unreachable. Please check your internet connection or configure a custom compiler endpoint in Settings.',
+          'All compiler endpoints failed.'
+        )
       );
     }
 
-    // 4. Extract PDF bytes
-    const arrayBuffer = await response.arrayBuffer();
-    if (!arrayBuffer || arrayBuffer.byteLength < 50) {
-      throw new CompilerError(
-        'The compiler returned an invalid or empty PDF file.',
-        'Zero-length or corrupted PDF buffer received.'
-      );
-    }
+    const base64Data = arrayBufferToBase64(compiledBuffer);
 
-    const base64Data = arrayBufferToBase64(arrayBuffer);
-
-    // 5. Store PDF locally in structured directory
+    // Save PDF locally in structured directory
     const dir = `${FileSystem.documentDirectory}resumes/${jobId}/`;
     const targetFilePath = `${dir}${versionId}.pdf`;
 
@@ -126,13 +108,115 @@ export const latexCompiler = {
 
       return {
         pdfPath: targetFilePath,
-        sizeBytes: (fileInfo as any).size || arrayBuffer.byteLength,
+        sizeBytes: (fileInfo as any).size || compiledBuffer.byteLength,
       };
     } catch (fsError: any) {
       throw new CompilerError(
         `Failed to save compiled PDF to local storage: ${fsError.message}`,
         fsError.stack || String(fsError)
       );
+    }
+  },
+
+  /**
+   * Compiles using the Rtex API v2.
+   */
+  async compileRtex(latexSource: string): Promise<ArrayBuffer> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+
+    try {
+      const res = await fetch('https://rtex.probablyfine.co.uk/api/v2', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: latexSource, format: 'pdf' }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timer);
+
+      if (!res.ok) {
+        throw new Error(`Rtex returned HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      if (data.status !== 'success' || !data.filename) {
+        throw new Error(data.log || 'Rtex compilation failed.');
+      }
+
+      const downloadController = new AbortController();
+      const downloadTimer = setTimeout(() => downloadController.abort(), 20000);
+
+      const pdfRes = await fetch(`https://rtex.probablyfine.co.uk/api/v2/${data.filename}`, {
+        signal: downloadController.signal,
+      });
+
+      clearTimeout(downloadTimer);
+
+      if (!pdfRes.ok) {
+        throw new Error(`Failed to download PDF from Rtex: HTTP ${pdfRes.status}`);
+      }
+
+      return await pdfRes.arrayBuffer();
+    } catch (err: any) {
+      clearTimeout(timer);
+      throw err;
+    }
+  },
+
+  /**
+   * Compiles using LaTeXOnline.cc.
+   */
+  async compileLatexOnline(latexSource: string): Promise<ArrayBuffer> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25000);
+
+    try {
+      const endpoint = `https://latexonline.cc/compile?text=${encodeURIComponent(latexSource)}`;
+      const res = await fetch(endpoint, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+
+      clearTimeout(timer);
+
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => '');
+        throw new Error(`LaTeXOnline returned HTTP ${res.status}: ${errorText.slice(0, 200)}`);
+      }
+
+      return await res.arrayBuffer();
+    } catch (err: any) {
+      clearTimeout(timer);
+      throw err;
+    }
+  },
+
+  /**
+   * Compiles using a custom endpoint.
+   */
+  async compileCustomEndpoint(url: string, latexSource: string): Promise<ArrayBuffer> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25000);
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ latex: latexSource }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timer);
+
+      if (!res.ok) {
+        throw new Error(`Custom compiler returned HTTP ${res.status}`);
+      }
+
+      return await res.arrayBuffer();
+    } catch (err: any) {
+      clearTimeout(timer);
+      throw err;
     }
   },
 };
