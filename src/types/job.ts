@@ -1,3 +1,5 @@
+import { MatchResult } from './matching';
+
 export type JobStatus =
   | 'Draft'
   | 'Ready'
@@ -15,6 +17,31 @@ export const JOB_STATUSES: JobStatus[] = [
   'Rejected',
   'Offer',
   'Withdrawn',
+];
+
+export type WorkflowState =
+  | 'CREATED'
+  | 'ANALYZING_JD'
+  | 'MATCHING_PROFILE'
+  | 'GENERATING_RESUME'
+  | 'RESUME_REVIEW'
+  | 'GENERATING_EMAIL'
+  | 'EMAIL_REVIEW'
+  | 'EMAIL_OPENED'
+  | 'APPLIED'
+  | 'FAILED';
+
+export const WORKFLOW_STATES: WorkflowState[] = [
+  'CREATED',
+  'ANALYZING_JD',
+  'MATCHING_PROFILE',
+  'GENERATING_RESUME',
+  'RESUME_REVIEW',
+  'GENERATING_EMAIL',
+  'EMAIL_REVIEW',
+  'EMAIL_OPENED',
+  'APPLIED',
+  'FAILED',
 ];
 
 export type AnalysisStatus =
@@ -56,6 +83,12 @@ export interface Job {
   appliedAt?: string | null;
   analysisStatus: AnalysisStatus;
   analysis?: JobAnalysis | null;
+  workflowState: WorkflowState;
+  workflowFailedStep?: string | null;
+  workflowErrorMessage?: string | null;
+  approvedResumeVersionId?: string | null;
+  resumeApprovedAt?: string | null;
+  matchResult?: MatchResult | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -81,13 +114,19 @@ export interface DashboardMetrics {
 
 export type CreateJobInput = Omit<
   Job,
-  'id' | 'createdAt' | 'updatedAt' | 'analysisStatus' | 'analysis' | 'appliedAt'
+  'id' | 'createdAt' | 'updatedAt' | 'analysisStatus' | 'analysis' | 'appliedAt' | 'workflowState'
 > & {
   id?: string;
   status?: JobStatus;
   appliedAt?: string | null;
   analysisStatus?: AnalysisStatus;
   analysis?: JobAnalysis | null;
+  workflowState?: WorkflowState;
+  workflowFailedStep?: string | null;
+  workflowErrorMessage?: string | null;
+  approvedResumeVersionId?: string | null;
+  resumeApprovedAt?: string | null;
+  matchResult?: MatchResult | null;
 };
 
 export type UpdateJobInput = Partial<Omit<Job, 'id' | 'createdAt'>>;

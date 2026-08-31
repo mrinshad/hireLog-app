@@ -8,6 +8,7 @@ import { up as migration005 } from './005_add_pdf_to_resume_versions';
 import { up as migration006 } from './006_create_email_drafts_table';
 import { up as migration007 } from './007_add_applied_at_and_status_history';
 import { up as migration008 } from './008_add_template_version_to_resume_versions';
+import { up as migration009 } from './009_add_workflow_orchestration_fields';
 
 export interface Migration {
   version: number;
@@ -55,6 +56,11 @@ export const MIGRATIONS: Migration[] = [
     version: 8,
     name: '008_add_template_version_to_resume_versions',
     up: migration008,
+  },
+  {
+    version: 9,
+    name: '009_add_workflow_orchestration_fields',
+    up: migration009,
   },
 ];
 

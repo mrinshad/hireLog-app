@@ -93,8 +93,16 @@ export default function ResumeLibraryScreen() {
               {item.targetCompany || 'Company not specified'}
             </Text>
           </View>
-          <View style={styles.versionBadge}>
-            <Text style={styles.versionBadgeText}>v{item.versionNumber}</Text>
+          <View style={styles.badgeRow}>
+            {item.isApproved && (
+              <View style={styles.approvedPill}>
+                <Feather name="check" size={10} color={Colors.successText} />
+                <Text style={styles.approvedPillText}>Approved</Text>
+              </View>
+            )}
+            <View style={styles.versionBadge}>
+              <Text style={styles.versionBadgeText}>v{item.versionNumber}</Text>
+            </View>
           </View>
         </View>
 
@@ -139,7 +147,11 @@ export default function ResumeLibraryScreen() {
             </Text>
           </View>
 
-          {item.jobStatus && <StatusBadge status={item.jobStatus} size="sm" />}
+          {item.jobStatus && (
+            <View style={styles.jobStatusArea}>
+              <StatusBadge status={item.jobStatus} size="sm" />
+            </View>
+          )}
 
           <Feather name="chevron-right" size={14} color={Colors.textMuted} style={styles.arrowIcon} />
         </View>
@@ -151,96 +163,78 @@ export default function ResumeLibraryScreen() {
     <SafeAreaView style={styles.safeArea}>
       <AppHeader
         title="Resume Library"
-        subtitle={`${resumes.length} generated`}
-        rightAction={
-          <PrimaryButton
-            title="New Job"
-            icon="plus"
-            size="sm"
-            onPress={() => router.push('/jobs/new')}
-          />
-        }
+        subtitle={`${resumes.length} generated versions`}
       />
 
       {/* Search Bar */}
-      {resumes.length > 0 && (
-        <View style={styles.searchContainer}>
-          <View style={styles.searchBar}>
-            <Feather name="search" size={IconSizes.sm} color={Colors.textMuted} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search company or role..."
-              placeholderTextColor={Colors.textMuted}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-            {searchQuery.length > 0 && (
+      <View style={styles.searchContainer}>
+        <View style={styles.searchBar}>
+          <Feather name="search" size={IconSizes.sm} color={Colors.textMuted} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search role or company..."
+            placeholderTextColor={Colors.textMuted}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
+              <Feather name="x-circle" size={IconSizes.sm} color={Colors.textMuted} />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {/* Status Filter Chips */}
+      <View style={styles.filterContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterScroll}>
+          {FILTER_OPTIONS.map((status) => {
+            const isSelected = selectedStatus === status;
+            return (
               <TouchableOpacity
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                onPress={() => setSearchQuery('')}>
-                <Feather name="x-circle" size={IconSizes.sm} color={Colors.textMuted} />
+                key={status}
+                style={[styles.filterChip, isSelected && styles.filterChipActive]}
+                onPress={() => setSelectedStatus(status)}>
+                <Text style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}>
+                  {status}
+                </Text>
               </TouchableOpacity>
-            )}
-          </View>
-        </View>
-      )}
+            );
+          })}
+        </ScrollView>
+      </View>
 
-      {/* Filter Chips */}
-      {resumes.length > 0 && (
-        <View style={styles.filterChipsContainer}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterChipsRow}>
-            {FILTER_OPTIONS.map((status) => {
-              const isSelected = selectedStatus === status;
-              return (
-                <TouchableOpacity
-                  key={status}
-                  style={[
-                    styles.filterChip,
-                    isSelected && styles.filterChipSelected,
-                  ]}
-                  onPress={() => setSelectedStatus(status)}>
-                  <Text
-                    style={[
-                      styles.filterChipText,
-                      isSelected && styles.filterChipTextSelected,
-                    ]}>
-                    {status}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      )}
-
+      {/* Resumes List */}
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={Typography.caption}>Loading resumes...</Text>
+          <Text style={Typography.caption}>Loading resume library...</Text>
         </View>
-      ) : resumes.length === 0 ? (
-        <EmptyState
-          icon="file-text"
-          title="No resumes yet"
-          description="Tailor a resume for any saved job posting to see it here."
-          actionLabel="View Jobs"
-          actionIcon="briefcase"
-          onAction={() => router.push('/jobs')}
-        />
       ) : filteredResumes.length === 0 ? (
         <EmptyState
-          icon="search"
-          title="No matching resumes"
-          description="Try adjusting your search query or filter."
-          actionLabel="Clear Filters"
-          actionIcon="x-circle"
-          onAction={() => {
-            setSearchQuery('');
-            setSelectedStatus('All');
-          }}
+          title={
+            searchQuery.trim()
+              ? 'No Resumes Match Search'
+              : selectedStatus !== 'All'
+              ? `No Resumes for ${selectedStatus} Applications`
+              : 'No Resumes Generated Yet'
+          }
+          description={
+            searchQuery.trim()
+              ? `No resumes found for "${searchQuery}".`
+              : 'Every resume generated across all your job applications will appear here.'
+          }
+          actionLabel={searchQuery || selectedStatus !== 'All' ? undefined : 'View Jobs'}
+          onAction={
+            searchQuery || selectedStatus !== 'All'
+              ? undefined
+              : () => router.push('/jobs')
+          }
         />
       ) : (
         <FlatList
@@ -262,45 +256,45 @@ const styles = StyleSheet.create({
   },
   searchContainer: {
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.surface,
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceSubtle,
     borderRadius: Radius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
     gap: Spacing.sm,
   },
   searchInput: {
     flex: 1,
     fontSize: 14,
     color: Colors.textPrimary,
-    padding: 0,
+    paddingVertical: 0,
   },
-  filterChipsContainer: {
+  filterContainer: {
+    backgroundColor: Colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
-    paddingBottom: Spacing.sm,
+    paddingVertical: Spacing.sm,
   },
-  filterChipsRow: {
+  filterScroll: {
     paddingHorizontal: Spacing.lg,
     gap: Spacing.xs,
   },
   filterChip: {
     backgroundColor: Colors.surfaceSubtle,
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: Radius.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 5,
   },
-  filterChipSelected: {
+  filterChipActive: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
   },
@@ -309,26 +303,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.textSecondary,
   },
-  filterChipTextSelected: {
+  filterChipTextActive: {
     color: Colors.textInverse,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
   },
   listContent: {
     padding: Spacing.lg,
     paddingBottom: Spacing.xxxl,
+    gap: Spacing.md,
   },
   resumeCard: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
+    padding: Spacing.lg,
     borderWidth: 1,
     borderColor: Colors.border,
-    padding: Spacing.lg,
-    marginBottom: Spacing.sm,
+    gap: Spacing.sm,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -338,6 +327,25 @@ const styles = StyleSheet.create({
   },
   titleArea: {
     flex: 1,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  approvedPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.successBg,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: Radius.sm,
+    gap: 3,
+  },
+  approvedPillText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: Colors.successText,
   },
   versionBadge: {
     backgroundColor: Colors.primaryLight,
@@ -356,27 +364,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: Spacing.sm,
   },
   templateTag: {
+    fontFamily: 'monospace',
     fontSize: 11,
     color: Colors.textMuted,
-    fontFamily: 'monospace',
   },
   footerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
-    marginTop: Spacing.md,
     paddingTop: Spacing.sm,
     borderTopWidth: 1,
     borderTopColor: Colors.borderLight,
+    marginTop: 2,
   },
   pdfStatusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: Radius.sm,
     gap: 4,
   },
@@ -402,7 +409,16 @@ const styles = StyleSheet.create({
   pdfStatusTextFailed: {
     color: Colors.errorText,
   },
-  arrowIcon: {
+  jobStatusArea: {
     marginLeft: 'auto',
+  },
+  arrowIcon: {
+    marginLeft: Spacing.xs,
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
   },
 });

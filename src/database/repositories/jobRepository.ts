@@ -8,7 +8,9 @@ import {
   JobStatus,
   JobStatusHistory,
   UpdateJobInput,
+  WorkflowState,
 } from '@/types/job';
+import { MatchResult } from '@/types/matching';
 
 interface JobRow {
   id: string;
@@ -25,6 +27,12 @@ interface JobRow {
   analysis_status?: string;
   analysis_json?: string | null;
   analysis_updated_at?: string | null;
+  workflow_state?: string;
+  workflow_failed_step?: string | null;
+  workflow_error_message?: string | null;
+  approved_resume_version_id?: string | null;
+  resume_approved_at?: string | null;
+  match_json?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -47,6 +55,15 @@ function mapRowToJob(row: JobRow): Job {
     }
   }
 
+  let parsedMatch: MatchResult | null = null;
+  if (row.match_json) {
+    try {
+      parsedMatch = JSON.parse(row.match_json) as MatchResult;
+    } catch {
+      parsedMatch = null;
+    }
+  }
+
   return {
     id: row.id,
     company: row.company,
@@ -61,6 +78,12 @@ function mapRowToJob(row: JobRow): Job {
     appliedAt: row.applied_at || null,
     analysisStatus: (row.analysis_status as AnalysisStatus) || 'Not analyzed',
     analysis: parsedAnalysis,
+    workflowState: (row.workflow_state as WorkflowState) || 'CREATED',
+    workflowFailedStep: row.workflow_failed_step || null,
+    workflowErrorMessage: row.workflow_error_message || null,
+    approvedResumeVersionId: row.approved_resume_version_id || null,
+    resumeApprovedAt: row.resume_approved_at || null,
+    matchResult: parsedMatch,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -76,6 +99,14 @@ function mapRowToHistory(row: StatusHistoryRow): JobStatusHistory {
   };
 }
 
+const SELECT_JOB_FIELDS = `
+  id, company, role, location, job_description, application_email, salary, source, source_url,
+  status, applied_at, analysis_status, analysis_json, analysis_updated_at,
+  workflow_state, workflow_failed_step, workflow_error_message,
+  approved_resume_version_id, resume_approved_at, match_json,
+  created_at, updated_at
+`;
+
 export const jobRepository = {
   /**
    * Retrieves all jobs ordered by newest activity (updated_at) first.
@@ -83,7 +114,7 @@ export const jobRepository = {
   async getJobs(): Promise<Job[]> {
     const db = await getDatabase();
     const rows = await db.getAllAsync<JobRow>(
-      'SELECT id, company, role, location, job_description, application_email, salary, source, source_url, status, applied_at, analysis_status, analysis_json, analysis_updated_at, created_at, updated_at FROM jobs ORDER BY updated_at DESC;'
+      `SELECT ${SELECT_JOB_FIELDS} FROM jobs ORDER BY updated_at DESC;`
     );
     return rows.map(mapRowToJob);
   },
@@ -93,7 +124,7 @@ export const jobRepository = {
    */
   async getFilteredJobs(filter: { status?: string; search?: string }): Promise<Job[]> {
     const db = await getDatabase();
-    let query = 'SELECT id, company, role, location, job_description, application_email, salary, source, source_url, status, applied_at, analysis_status, analysis_json, analysis_updated_at, created_at, updated_at FROM jobs WHERE 1=1';
+    let query = `SELECT ${SELECT_JOB_FIELDS} FROM jobs WHERE 1=1`;
     const params: string[] = [];
 
     if (filter.status && filter.status !== 'All') {
@@ -119,7 +150,7 @@ export const jobRepository = {
   async getRecentJobs(limit = 5): Promise<Job[]> {
     const db = await getDatabase();
     const rows = await db.getAllAsync<JobRow>(
-      'SELECT id, company, role, location, job_description, application_email, salary, source, source_url, status, applied_at, analysis_status, analysis_json, analysis_updated_at, created_at, updated_at FROM jobs ORDER BY updated_at DESC LIMIT ?;',
+      `SELECT ${SELECT_JOB_FIELDS} FROM jobs ORDER BY updated_at DESC LIMIT ?;`,
       limit
     );
     return rows.map(mapRowToJob);
@@ -131,7 +162,7 @@ export const jobRepository = {
   async getJob(id: string): Promise<Job | null> {
     const db = await getDatabase();
     const row = await db.getFirstAsync<JobRow>(
-      'SELECT id, company, role, location, job_description, application_email, salary, source, source_url, status, applied_at, analysis_status, analysis_json, analysis_updated_at, created_at, updated_at FROM jobs WHERE id = ?;',
+      `SELECT ${SELECT_JOB_FIELDS} FROM jobs WHERE id = ?;`,
       id
     );
     return row ? mapRowToJob(row) : null;
@@ -147,11 +178,18 @@ export const jobRepository = {
     const appliedAt = status === 'Applied' ? new Date().toISOString() : null;
     const analysisStatus = input.analysisStatus || 'Not analyzed';
     const analysisJson = input.analysis ? JSON.stringify(input.analysis) : null;
+    const workflowState = input.workflowState || 'CREATED';
+    const matchJson = input.matchResult ? JSON.stringify(input.matchResult) : null;
     const now = new Date().toISOString();
 
     await db.runAsync(
-      `INSERT INTO jobs (id, company, role, location, job_description, application_email, salary, source, source_url, status, applied_at, analysis_status, analysis_json, analysis_updated_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+      `INSERT INTO jobs (
+         id, company, role, location, job_description, application_email, salary, source, source_url,
+         status, applied_at, analysis_status, analysis_json, analysis_updated_at,
+         workflow_state, workflow_failed_step, workflow_error_message,
+         approved_resume_version_id, resume_approved_at, match_json,
+         created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       id,
       input.company || '',
       input.role || '',
@@ -166,6 +204,12 @@ export const jobRepository = {
       analysisStatus,
       analysisJson,
       input.analysis ? now : null,
+      workflowState,
+      input.workflowFailedStep || null,
+      input.workflowErrorMessage || null,
+      input.approvedResumeVersionId || null,
+      input.resumeApprovedAt || null,
+      matchJson,
       now,
       now
     );
@@ -184,6 +228,12 @@ export const jobRepository = {
       appliedAt,
       analysisStatus,
       analysis: input.analysis,
+      workflowState,
+      workflowFailedStep: input.workflowFailedStep || null,
+      workflowErrorMessage: input.workflowErrorMessage || null,
+      approvedResumeVersionId: input.approvedResumeVersionId || null,
+      resumeApprovedAt: input.resumeApprovedAt || null,
+      matchResult: input.matchResult || null,
       createdAt: now,
       updatedAt: now,
     };
@@ -216,7 +266,6 @@ export const jobRepository = {
       appliedAt = new Date().toISOString();
     }
 
-    // Check if jobDescription was changed
     let analysisStatus =
       updates.analysisStatus !== undefined ? updates.analysisStatus : current.analysisStatus;
     if (
@@ -226,6 +275,25 @@ export const jobRepository = {
     ) {
       analysisStatus = 'Outdated';
     }
+
+    const workflowState =
+      updates.workflowState !== undefined ? updates.workflowState : current.workflowState;
+    const workflowFailedStep =
+      updates.workflowFailedStep !== undefined ? updates.workflowFailedStep : current.workflowFailedStep;
+    const workflowErrorMessage =
+      updates.workflowErrorMessage !== undefined ? updates.workflowErrorMessage : current.workflowErrorMessage;
+    const approvedResumeVersionId =
+      updates.approvedResumeVersionId !== undefined ? updates.approvedResumeVersionId : current.approvedResumeVersionId;
+    const resumeApprovedAt =
+      updates.resumeApprovedAt !== undefined ? updates.resumeApprovedAt : current.resumeApprovedAt;
+    const matchJson =
+      updates.matchResult !== undefined
+        ? updates.matchResult
+          ? JSON.stringify(updates.matchResult)
+          : null
+        : current.matchResult
+        ? JSON.stringify(current.matchResult)
+        : null;
 
     const now = new Date().toISOString();
 
@@ -242,6 +310,12 @@ export const jobRepository = {
          status = ?,
          applied_at = ?,
          analysis_status = ?,
+         workflow_state = ?,
+         workflow_failed_step = ?,
+         workflow_error_message = ?,
+         approved_resume_version_id = ?,
+         resume_approved_at = ?,
+         match_json = ?,
          updated_at = ?
        WHERE id = ?;`,
       company,
@@ -255,6 +329,78 @@ export const jobRepository = {
       status,
       appliedAt || null,
       analysisStatus,
+      workflowState,
+      workflowFailedStep || null,
+      workflowErrorMessage || null,
+      approvedResumeVersionId || null,
+      resumeApprovedAt || null,
+      matchJson,
+      now,
+      id
+    );
+  },
+
+  /**
+   * Updates workflow state and optional error tracking.
+   */
+  async updateWorkflowState(
+    id: string,
+    workflowState: WorkflowState,
+    failedStep: string | null = null,
+    errorMessage: string | null = null
+  ): Promise<void> {
+    const db = await getDatabase();
+    const now = new Date().toISOString();
+
+    await db.runAsync(
+      `UPDATE jobs SET
+         workflow_state = ?,
+         workflow_failed_step = ?,
+         workflow_error_message = ?,
+         updated_at = ?
+       WHERE id = ?;`,
+      workflowState,
+      failedStep,
+      errorMessage,
+      now,
+      id
+    );
+  },
+
+  /**
+   * Records approval of a resume version for this job.
+   */
+  async setApprovedResumeVersion(id: string, resumeVersionId: string): Promise<void> {
+    const db = await getDatabase();
+    const now = new Date().toISOString();
+
+    await db.runAsync(
+      `UPDATE jobs SET
+         approved_resume_version_id = ?,
+         resume_approved_at = ?,
+         workflow_state = 'GENERATING_EMAIL',
+         updated_at = ?
+       WHERE id = ?;`,
+      resumeVersionId,
+      now,
+      now,
+      id
+    );
+  },
+
+  /**
+   * Persists calculated profile match results for this job.
+   */
+  async updateJobMatch(id: string, matchResult: MatchResult): Promise<void> {
+    const db = await getDatabase();
+    const now = new Date().toISOString();
+
+    await db.runAsync(
+      `UPDATE jobs SET
+         match_json = ?,
+         updated_at = ?
+       WHERE id = ?;`,
+      JSON.stringify(matchResult),
       now,
       id
     );
@@ -277,7 +423,6 @@ export const jobRepository = {
     const now = new Date().toISOString();
     const historyId = `sh_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
-    // 1. Log transition
     await db.runAsync(
       'INSERT INTO job_status_history (id, job_id, old_status, new_status, changed_at) VALUES (?, ?, ?, ?, ?);',
       historyId,
@@ -287,17 +432,18 @@ export const jobRepository = {
       now
     );
 
-    // 2. Determine applied_at timestamp
     let appliedAt = current.appliedAt;
     if (newStatus === 'Applied' && !appliedAt) {
       appliedAt = now;
     }
 
-    // 3. Update job
+    const workflowState = newStatus === 'Applied' ? 'APPLIED' : current.workflowState;
+
     await db.runAsync(
-      'UPDATE jobs SET status = ?, applied_at = ?, updated_at = ? WHERE id = ?;',
+      'UPDATE jobs SET status = ?, applied_at = ?, workflow_state = ?, updated_at = ? WHERE id = ?;',
       newStatus,
       appliedAt || null,
+      workflowState,
       now,
       id
     );

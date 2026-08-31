@@ -31,6 +31,7 @@ export function runEmailComposerTests(): { total: number; passed: number; failed
     applicationEmail: '',
     status: 'Draft',
     analysisStatus: 'Analyzed',
+    workflowState: 'CREATED',
     analysis: {
       role: 'Senior Full Stack Engineer',
       company: 'Tech Innovations Inc',

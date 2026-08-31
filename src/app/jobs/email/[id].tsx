@@ -30,6 +30,7 @@ import { emailGenerator } from '@/services/gemini/emailGenerator';
 import { GeminiError } from '@/services/gemini/client';
 import { ResumeVersion } from '@/services/latex/types';
 import { matchingEngine } from '@/services/matching/matchingEngine';
+import { workflowOrchestrator } from '@/services/workflow/workflowOrchestrator';
 import { Job } from '@/types/job';
 import { Profile } from '@/types/profile';
 
@@ -58,12 +59,19 @@ export default function EmailComposerScreen() {
       if (!id) return;
       try {
         setIsLoading(true);
-        const [jobData, profileData, resumeVer, existingDraft] = await Promise.all([
+        const [jobData, profileData, existingDraft] = await Promise.all([
           jobRepository.getJob(id),
           profileRepository.getProfile(),
-          resumeRepository.getLatestResumeVersion(id),
           emailRepository.getDraftByJobId(id),
         ]);
+
+        let resumeVer: ResumeVersion | null = null;
+        if (jobData?.approvedResumeVersionId) {
+          resumeVer = await resumeRepository.getResumeLibraryDetails(jobData.approvedResumeVersionId);
+        }
+        if (!resumeVer) {
+          resumeVer = await resumeRepository.getLatestResumeVersion(id);
+        }
 
         setJob(jobData);
         setProfile(profileData);
@@ -101,6 +109,11 @@ export default function EmailComposerScreen() {
         } else if (profileData) {
           setSignature(emailComposerService.formatSignature(profileData));
         }
+
+        // If email was already opened, prompt user on entry
+        if (jobData?.workflowState === 'EMAIL_OPENED') {
+          setShowSentPrompt(true);
+        }
       } catch (error) {
         console.error('Failed to load email composer data:', error);
         Alert.alert('Error', 'Failed to load email composer.');
@@ -130,9 +143,8 @@ export default function EmailComposerScreen() {
     try {
       setIsGenerating(true);
 
-      const matchResult = job.analysis
-        ? matchingEngine.match(profile, job.analysis)
-        : null;
+      const matchResult =
+        job.matchResult || (job.analysis ? matchingEngine.match(profile, job.analysis) : null);
 
       const matchedSkills = matchResult?.allMatchedSkills || [];
       const topExp = profile.experience.length > 0 ? profile.experience[0] : undefined;
@@ -228,6 +240,7 @@ export default function EmailComposerScreen() {
 
   const launchEmailIntent = async (attachmentPath: string | null) => {
     try {
+      // Save latest user edits first
       await emailRepository.saveDraft({
         jobId: job!.id,
         resumeVersionId: latestResume?.id || null,
@@ -239,6 +252,7 @@ export default function EmailComposerScreen() {
       });
 
       setHasOpenedEmailApp(true);
+      await jobRepository.updateWorkflowState(job!.id, 'EMAIL_OPENED');
 
       await emailComposerService.openEmailApp({
         recipient,
@@ -257,9 +271,9 @@ export default function EmailComposerScreen() {
   const handleMarkAsApplied = async () => {
     if (!job) return;
     try {
-      await jobRepository.updateJobStatus(job.id, 'Applied');
+      await workflowOrchestrator.confirmApplicationSent(job.id);
       setShowSentPrompt(false);
-      Alert.alert('Updated', 'Job marked as Applied!', [
+      Alert.alert('Application Updated', 'Job marked as Applied!', [
         { text: 'View Job', onPress: () => router.replace(`/jobs/${job.id}`) },
       ]);
     } catch (error) {
@@ -296,7 +310,7 @@ export default function EmailComposerScreen() {
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <AppHeader
-          title="Email Composer"
+          title="Email Review"
           subtitle={job.company}
           showBack
           rightAction={
@@ -311,6 +325,14 @@ export default function EmailComposerScreen() {
         />
 
         <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
+          {/* Gate 2 Header Banner */}
+          <Card style={styles.gateBannerCard}>
+            <Text style={Typography.sectionTitle}>Gate 2: Review & Send Application</Text>
+            <Text style={[Typography.caption, { marginVertical: Spacing.xs }]}>
+              Verify your application email and attachment. Tapping "Open in Email App" will transfer the draft into your email client.
+            </Text>
+          </Card>
+
           {/* Recipient */}
           <Card style={styles.card}>
             <View style={styles.labelRow}>
@@ -405,7 +427,7 @@ export default function EmailComposerScreen() {
                     {latestResume.targetRole || 'Resume'} (v{latestResume.versionNumber}.pdf)
                   </Text>
                   <Text style={[Typography.caption, { color: Colors.successText }]}>
-                    Attached from local storage
+                    Attached verified PDF
                   </Text>
                 </View>
               </View>
@@ -433,17 +455,17 @@ export default function EmailComposerScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Confirmation Modal */}
+      {/* Confirmation Modal when returning from external email app */}
       {showSentPrompt && (
         <View style={styles.modalBackdrop}>
           <Card style={styles.modalCard}>
             <Text style={Typography.sectionTitle}>Application Check</Text>
             <Text style={[Typography.body, { marginVertical: Spacing.sm }]}>
-              Did you send this application email?
+              Did you submit the email application to {job.company || 'the employer'}?
             </Text>
             <View style={styles.modalActionRow}>
               <PrimaryButton
-                title="Mark as Applied"
+                title="Yes, Mark as Applied"
                 icon="check"
                 size="sm"
                 onPress={handleMarkAsApplied}
@@ -490,6 +512,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: Spacing.xxl,
     gap: Spacing.lg,
+  },
+  gateBannerCard: {
+    marginBottom: Spacing.md,
+    borderColor: Colors.primaryBorder,
   },
   card: {
     marginBottom: Spacing.md,

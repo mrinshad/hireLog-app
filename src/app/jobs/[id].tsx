@@ -18,19 +18,12 @@ import { Card } from '@/components/common/Card';
 import { DestructiveButton, PrimaryButton, SecondaryButton } from '@/components/common/Buttons';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
-import { emailRepository } from '@/database/repositories/emailRepository';
 import { jobRepository } from '@/database/repositories/jobRepository';
-import { profileRepository } from '@/database/repositories/profileRepository';
 import { resumeRepository } from '@/database/repositories/resumeRepository';
-import { settingsRepository } from '@/database/repositories/settingsRepository';
-import { geminiClient, GeminiError } from '@/services/gemini/client';
-import { jdAnalyzer } from '@/services/gemini/jdAnalyzer';
 import { ResumeVersion } from '@/services/latex/types';
-import { matchingEngine } from '@/services/matching/matchingEngine';
 import { formatRelativeDate } from '@/services/tracking/trackingHelpers';
-import { EmailDraft } from '@/types/email';
+import { workflowOrchestrator } from '@/services/workflow/workflowOrchestrator';
 import { Job, JOB_STATUSES, JobStatus, JobStatusHistory } from '@/types/job';
-import { MatchResult } from '@/types/matching';
 
 export default function JobDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -39,11 +32,7 @@ export default function JobDetailsScreen() {
   const [job, setJob] = useState<Job | null>(null);
   const [statusHistory, setStatusHistory] = useState<JobStatusHistory[]>([]);
   const [latestResume, setLatestResume] = useState<ResumeVersion | null>(null);
-  const [emailDraft, setEmailDraft] = useState<EmailDraft | null>(null);
-  const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
-
   const [isLoading, setIsLoading] = useState(true);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showFullJd, setShowFullJd] = useState(false);
@@ -52,23 +41,15 @@ export default function JobDetailsScreen() {
     if (!id) return;
     try {
       setIsLoading(true);
-      const [jobData, historyData, resumeVer, draft] = await Promise.all([
+      const [jobData, historyData, resumeVer] = await Promise.all([
         jobRepository.getJob(id),
         jobRepository.getStatusHistory(id),
         resumeRepository.getLatestResumeVersion(id),
-        emailRepository.getDraftByJobId(id),
       ]);
 
       setJob(jobData);
       setStatusHistory(historyData);
       setLatestResume(resumeVer);
-      setEmailDraft(draft);
-
-      if (jobData?.analysis) {
-        const profile = await profileRepository.getProfile();
-        const match = matchingEngine.match(profile, jobData.analysis);
-        setMatchResult(match);
-      }
     } catch (error) {
       console.error('Failed to load job details:', error);
       Alert.alert('Error', 'Failed to load job details.');
@@ -99,33 +80,14 @@ export default function JobDetailsScreen() {
     }
   };
 
-  const handleAnalyzeJD = async () => {
+  const handleConfirmSent = async () => {
     if (!job) return;
-
     try {
-      const apiKey = await settingsRepository.getGeminiApiKey();
-      if (!apiKey) {
-        Alert.alert('API Key Required', 'Please configure your Gemini API Key in Settings first.');
-        return;
-      }
-
-      setIsAnalyzing(true);
-      const analysis = await jdAnalyzer.analyze(job.jobDescription);
-      await jobRepository.updateJobAnalysis(job.id, 'Analyzed', analysis);
-      const updatedJob = await jobRepository.getJob(job.id);
-      setJob(updatedJob);
-
-      const profile = await profileRepository.getProfile();
-      const match = matchingEngine.match(profile, analysis);
-      setMatchResult(match);
-    } catch (error: any) {
-      console.error('Analysis error:', error);
-      Alert.alert(
-        'Analysis Failed',
-        error instanceof GeminiError ? error.message : 'Could not analyze job description.'
-      );
-    } finally {
-      setIsAnalyzing(false);
+      await workflowOrchestrator.confirmApplicationSent(job.id);
+      await loadJobData();
+      Alert.alert('Updated', 'Application marked as Applied!');
+    } catch (error) {
+      console.error('Failed to mark applied:', error);
     }
   };
 
@@ -177,6 +139,13 @@ export default function JobDetailsScreen() {
     );
   }
 
+  // Determine stage & next action based on workflow state
+  const isJdAnalyzed = !!job.analysis && job.analysisStatus === 'Analyzed';
+  const isProfileMatched = !!job.matchResult;
+  const isResumeGenerated = !!latestResume && latestResume.generationStatus === 'Generated';
+  const isResumeApproved = !!job.approvedResumeVersionId;
+  const isApplied = job.status === 'Applied';
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <AppHeader
@@ -209,7 +178,7 @@ export default function JobDetailsScreen() {
             <StatusBadge status={job.status} size="md" />
           </View>
 
-          {job.status === 'Applied' && job.appliedAt && (
+          {isApplied && job.appliedAt && (
             <View style={styles.appliedDateRow}>
               <Feather name="send" size={IconSizes.xs} color={Colors.primaryDark} />
               <Text style={styles.appliedDateText}>
@@ -260,159 +229,197 @@ export default function JobDetailsScreen() {
           )}
         </Card>
 
-        {/* Workflow Actions */}
-        <Text style={[Typography.sectionTitle, { marginBottom: Spacing.sm }]}>Workflow</Text>
-
-        {/* 1. JD Analysis */}
-        <Card style={styles.moduleCard}>
-          <View style={styles.moduleTopRow}>
-            <Feather name="search" size={IconSizes.md} color={Colors.primary} />
-            <View style={styles.moduleTitleArea}>
-              <Text style={Typography.itemTitle}>1. JD Analysis</Text>
-              <Text style={Typography.caption}>
-                {job.analysisStatus === 'Analyzed' && job.analysis
-                  ? `${job.analysis.requiredSkills.length} required skills extracted`
-                  : job.analysisStatus === 'Analyzing'
-                  ? 'Analyzing...'
-                  : 'Extract skills and requirements'}
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.moduleStatusPill,
-                job.analysisStatus === 'Analyzed' ? styles.statusPillSuccess : styles.statusPillNeutral,
-              ]}>
-              <Text
-                style={[
-                  styles.moduleStatusPillText,
-                  job.analysisStatus === 'Analyzed' ? styles.statusPillTextSuccess : styles.statusPillTextNeutral,
-                ]}>
-                {job.analysisStatus}
-              </Text>
-            </View>
+        {/* =========================================================================
+            PRIMARY WORKFLOW ORCHESTRATION CARD
+            ========================================================================= */}
+        <Card style={styles.workflowCard}>
+          <View style={styles.workflowHeader}>
+            <Feather name="activity" size={IconSizes.md} color={Colors.primary} />
+            <Text style={Typography.sectionTitle}>Application Workflow</Text>
           </View>
 
-          {job.analysis ? (
-            <View style={styles.skillsSummaryRow}>
-              {job.analysis.requiredSkills.slice(0, 4).map((skill, idx) => (
-                <View key={idx} style={styles.skillPill}>
-                  <Text style={styles.skillPillText}>{skill}</Text>
-                </View>
-              ))}
-              {job.analysis.requiredSkills.length > 4 && (
-                <Text style={Typography.caption}>+{job.analysis.requiredSkills.length - 4} more</Text>
-              )}
+          {/* Contextual description & single primary action based on workflow state */}
+          {job.workflowState === 'RESUME_REVIEW' ? (
+            <View style={styles.workflowStateContent}>
+              <View style={styles.stateNoticeBox}>
+                <Feather name="file-text" size={IconSizes.sm} color={Colors.primary} />
+                <Text style={styles.stateNoticeText}>
+                  Resume generated and awaiting your review.
+                </Text>
+              </View>
+              <PrimaryButton
+                title="Review & Approve Resume →"
+                icon="check-circle"
+                size="lg"
+                onPress={() => router.push(`/jobs/resume/${job.id}`)}
+                style={styles.workflowPrimaryBtn}
+              />
+            </View>
+          ) : job.workflowState === 'EMAIL_REVIEW' ? (
+            <View style={styles.workflowStateContent}>
+              <View style={styles.stateNoticeBox}>
+                <Feather name="mail" size={IconSizes.sm} color={Colors.primary} />
+                <Text style={styles.stateNoticeText}>
+                  Resume approved. Application email ready for review.
+                </Text>
+              </View>
+              <PrimaryButton
+                title="Review & Send Email →"
+                icon="mail"
+                size="lg"
+                onPress={() => router.push(`/jobs/email/${job.id}`)}
+                style={styles.workflowPrimaryBtn}
+              />
+            </View>
+          ) : job.workflowState === 'EMAIL_OPENED' ? (
+            <View style={styles.workflowStateContent}>
+              <View style={styles.stateNoticeBox}>
+                <Feather name="external-link" size={IconSizes.sm} color={Colors.primary} />
+                <Text style={styles.stateNoticeText}>
+                  Email application was opened in your email client.
+                </Text>
+              </View>
+              <View style={styles.dualActionRow}>
+                <PrimaryButton
+                  title="Mark as Applied"
+                  icon="check"
+                  size="md"
+                  onPress={handleConfirmSent}
+                  style={{ flex: 1 }}
+                />
+                <SecondaryButton
+                  title="Reopen Email"
+                  icon="mail"
+                  size="md"
+                  onPress={() => router.push(`/jobs/email/${job.id}`)}
+                  style={{ flex: 1 }}
+                />
+              </View>
+            </View>
+          ) : job.workflowState === 'APPLIED' ? (
+            <View style={styles.workflowStateContent}>
+              <View style={styles.successNoticeBox}>
+                <Feather name="check-circle" size={IconSizes.sm} color={Colors.successText} />
+                <Text style={styles.successNoticeText}>
+                  Application submitted and active!
+                </Text>
+              </View>
+              <View style={styles.dualActionRow}>
+                <SecondaryButton
+                  title="View Resume"
+                  icon="file-text"
+                  size="sm"
+                  onPress={() => router.push(`/jobs/resume/${job.id}`)}
+                  style={{ flex: 1 }}
+                />
+                <SecondaryButton
+                  title="View Email Draft"
+                  icon="mail"
+                  size="sm"
+                  onPress={() => router.push(`/jobs/email/${job.id}`)}
+                  style={{ flex: 1 }}
+                />
+              </View>
+            </View>
+          ) : job.workflowState === 'FAILED' ? (
+            <View style={styles.workflowStateContent}>
+              <View style={styles.errorNoticeBox}>
+                <Feather name="alert-circle" size={IconSizes.sm} color={Colors.errorText} />
+                <Text style={styles.errorNoticeText}>
+                  {job.workflowErrorMessage || 'Pipeline encountered an issue.'}
+                </Text>
+              </View>
+              <PrimaryButton
+                title="Retry Pipeline"
+                icon="refresh-cw"
+                size="md"
+                onPress={() => router.push(`/jobs/progress/${job.id}`)}
+                style={styles.workflowPrimaryBtn}
+              />
             </View>
           ) : (
-            <PrimaryButton
-              title="Analyze JD with Gemini"
-              icon="cpu"
-              size="sm"
-              loading={isAnalyzing}
-              onPress={handleAnalyzeJD}
-              style={{ marginTop: Spacing.sm }}
-            />
-          )}
-        </Card>
-
-        {/* 2. Profile Match */}
-        <Card style={styles.moduleCard}>
-          <View style={styles.moduleTopRow}>
-            <Feather name="target" size={IconSizes.md} color={Colors.primary} />
-            <View style={styles.moduleTitleArea}>
-              <Text style={Typography.itemTitle}>2. Profile Match</Text>
-              <Text style={Typography.caption}>
-                {matchResult ? `${matchResult.overallScore}% overall score` : 'Deterministic local comparison'}
-              </Text>
-            </View>
-            {matchResult && (
-              <View style={styles.scoreBadge}>
-                <Text style={styles.scoreBadgeText}>{matchResult.overallScore}%</Text>
+            <View style={styles.workflowStateContent}>
+              <View style={styles.stateNoticeBox}>
+                <Feather name="play" size={IconSizes.sm} color={Colors.primary} />
+                <Text style={styles.stateNoticeText}>
+                  Application ready for automated processing.
+                </Text>
               </View>
-            )}
-          </View>
+              <PrimaryButton
+                title="Start Automated Pipeline →"
+                icon="play"
+                size="lg"
+                onPress={() => router.push(`/jobs/progress/${job.id}`)}
+                style={styles.workflowPrimaryBtn}
+              />
+            </View>
+          )}
 
-          {matchResult ? (
-            <SecondaryButton
-              title="Match Breakdown & Tailor"
-              icon="chevron-right"
-              size="sm"
-              onPress={() => router.push(`/jobs/customize/${job.id}`)}
-              style={{ marginTop: Spacing.sm }}
-            />
-          ) : null}
-        </Card>
-
-        {/* 3. Tailored Resume */}
-        <Card style={styles.moduleCard}>
-          <View style={styles.moduleTopRow}>
-            <Feather name="file-text" size={IconSizes.md} color={Colors.primary} />
-            <View style={styles.moduleTitleArea}>
-              <Text style={Typography.itemTitle}>3. Tailored Resume (PDF)</Text>
-              <Text style={Typography.caption}>
-                {latestResume?.pdfPath ? `Version v${latestResume.versionNumber} ready` : 'Master LaTeX template generator'}
+          {/* Clean Progress Checklist */}
+          <View style={styles.checklist}>
+            <View style={styles.checkItem}>
+              <Feather name="check" size={13} color={Colors.successText} />
+              <Text style={styles.checkText}>Job created</Text>
+            </View>
+            <View style={styles.checkItem}>
+              <Feather
+                name={isJdAnalyzed ? 'check' : 'circle'}
+                size={13}
+                color={isJdAnalyzed ? Colors.successText : Colors.textMuted}
+              />
+              <Text style={[styles.checkText, !isJdAnalyzed && styles.checkTextPending]}>
+                JD analyzed with extracted skills
               </Text>
             </View>
-            <View
-              style={[
-                styles.moduleStatusPill,
-                latestResume?.pdfPath ? styles.statusPillSuccess : styles.statusPillNeutral,
-              ]}>
+            <View style={styles.checkItem}>
+              <Feather
+                name={isProfileMatched ? 'check' : 'circle'}
+                size={13}
+                color={isProfileMatched ? Colors.successText : Colors.textMuted}
+              />
+              <Text style={[styles.checkText, !isProfileMatched && styles.checkTextPending]}>
+                Profile matched deterministically
+              </Text>
+            </View>
+            <View style={styles.checkItem}>
+              <Feather
+                name={isResumeApproved ? 'check' : isResumeGenerated ? 'clock' : 'circle'}
+                size={13}
+                color={
+                  isResumeApproved
+                    ? Colors.successText
+                    : isResumeGenerated
+                    ? Colors.warningText
+                    : Colors.textMuted
+                }
+              />
               <Text
                 style={[
-                  styles.moduleStatusPillText,
-                  latestResume?.pdfPath ? styles.statusPillTextSuccess : styles.statusPillTextNeutral,
+                  styles.checkText,
+                  !isResumeApproved && !isResumeGenerated && styles.checkTextPending,
                 ]}>
-                {latestResume?.pdfPath ? 'PDF Ready' : 'Pending'}
+                {isResumeApproved
+                  ? 'Resume approved'
+                  : isResumeGenerated
+                  ? 'Resume generated (awaiting review)'
+                  : 'Resume tailored'}
+              </Text>
+            </View>
+            <View style={styles.checkItem}>
+              <Feather
+                name={isApplied ? 'check' : 'circle'}
+                size={13}
+                color={isApplied ? Colors.successText : Colors.textMuted}
+              />
+              <Text style={[styles.checkText, !isApplied && styles.checkTextPending]}>
+                Application sent & confirmed
               </Text>
             </View>
           </View>
-
-          <PrimaryButton
-            title={latestResume?.pdfPath ? `View Resume (v${latestResume.versionNumber})` : 'Customize & Generate Resume'}
-            icon="file-text"
-            size="sm"
-            onPress={() => router.push(`/jobs/resume/${job.id}`)}
-            style={{ marginTop: Spacing.sm }}
-          />
-        </Card>
-
-        {/* 4. Application Email */}
-        <Card style={styles.moduleCard}>
-          <View style={styles.moduleTopRow}>
-            <Feather name="mail" size={IconSizes.md} color={Colors.primary} />
-            <View style={styles.moduleTitleArea}>
-              <Text style={Typography.itemTitle}>4. Application Email</Text>
-              <Text style={Typography.caption}>
-                {emailDraft?.body ? 'Draft prepared with resume attachment' : 'Compose & launch email app'}
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.moduleStatusPill,
-                emailDraft?.body ? styles.statusPillSuccess : styles.statusPillNeutral,
-              ]}>
-              <Text
-                style={[
-                  styles.moduleStatusPillText,
-                  emailDraft?.body ? styles.statusPillTextSuccess : styles.statusPillTextNeutral,
-                ]}>
-                {emailDraft?.body ? 'Draft Ready' : 'Not Prepared'}
-              </Text>
-            </View>
-          </View>
-
-          <SecondaryButton
-            title={emailDraft?.body ? 'Open Email Composer' : 'Prepare Application Email'}
-            icon="mail"
-            size="sm"
-            onPress={() => router.push(`/jobs/email/${job.id}`)}
-            style={{ marginTop: Spacing.sm }}
-          />
         </Card>
 
         {/* Raw Job Description */}
-        <Card style={styles.moduleCard}>
+        <Card style={styles.card}>
           <View style={styles.rowBetween}>
             <Text style={Typography.sectionTitle}>Job Description</Text>
             <TouchableOpacity onPress={() => setShowFullJd(!showFullJd)}>
@@ -494,7 +501,7 @@ const styles = StyleSheet.create({
     gap: Spacing.lg,
   },
   heroCard: {
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   heroTopRow: {
     flexDirection: 'row',
@@ -552,66 +559,91 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.xs,
   },
-  moduleCard: {
+  workflowCard: {
+    marginBottom: Spacing.md,
+    borderColor: Colors.primaryBorder,
+  },
+  workflowHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
     marginBottom: Spacing.md,
   },
-  moduleTopRow: {
+  workflowStateContent: {
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  stateNoticeBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
+    gap: Spacing.sm,
+    backgroundColor: Colors.primaryLight,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
   },
-  moduleTitleArea: {
+  stateNoticeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.primaryDark,
     flex: 1,
   },
-  moduleStatusPill: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: Radius.sm,
-  },
-  statusPillSuccess: {
-    backgroundColor: Colors.successBg,
-  },
-  statusPillNeutral: {
-    backgroundColor: Colors.surfaceSubtle,
-  },
-  moduleStatusPillText: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  statusPillTextSuccess: {
-    color: Colors.successText,
-  },
-  statusPillTextNeutral: {
-    color: Colors.textSecondary,
-  },
-  skillsSummaryRow: {
+  successNoticeBox: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.xs,
     alignItems: 'center',
-    marginTop: Spacing.sm,
+    gap: Spacing.sm,
+    backgroundColor: Colors.successBg,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
   },
-  skillPill: {
-    backgroundColor: Colors.surfaceSubtle,
-    borderRadius: Radius.sm,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
+  successNoticeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.successText,
+    flex: 1,
   },
-  skillPillText: {
-    fontSize: 11,
-    color: Colors.textPrimary,
-    fontWeight: '500',
+  errorNoticeBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.errorBg,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
   },
-  scoreBadge: {
-    backgroundColor: Colors.primaryLight,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: Radius.sm,
+  errorNoticeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.errorText,
+    flex: 1,
   },
-  scoreBadgeText: {
+  workflowPrimaryBtn: {
+    marginTop: Spacing.xs,
+  },
+  dualActionRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginTop: Spacing.xs,
+  },
+  checklist: {
+    gap: Spacing.sm,
+    paddingTop: Spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+  },
+  checkItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  checkText: {
     fontSize: 12,
-    fontWeight: '700',
-    color: Colors.primaryDark,
+    fontWeight: '500',
+    color: Colors.textPrimary,
+  },
+  checkTextPending: {
+    color: Colors.textMuted,
+  },
+  card: {
+    marginBottom: Spacing.md,
   },
   rowBetween: {
     flexDirection: 'row',

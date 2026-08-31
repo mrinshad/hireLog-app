@@ -20,9 +20,34 @@ import { PrimaryButton } from '@/components/common/Buttons';
 import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
 import { jobRepository } from '@/database/repositories/jobRepository';
 import { formatRelativeDate } from '@/services/tracking/trackingHelpers';
-import { Job, JOB_STATUSES, JobStatus } from '@/types/job';
+import { Job, JOB_STATUSES, JobStatus, WorkflowState } from '@/types/job';
 
 const FILTER_OPTIONS: Array<'All' | JobStatus> = ['All', ...JOB_STATUSES];
+
+function getWorkflowLabel(state?: WorkflowState): string {
+  switch (state) {
+    case 'ANALYZING_JD':
+      return 'Analyzing JD';
+    case 'MATCHING_PROFILE':
+      return 'Matching Profile';
+    case 'GENERATING_RESUME':
+      return 'Generating Resume';
+    case 'RESUME_REVIEW':
+      return 'Resume Review';
+    case 'GENERATING_EMAIL':
+      return 'Drafting Email';
+    case 'EMAIL_REVIEW':
+      return 'Email Review';
+    case 'EMAIL_OPENED':
+      return 'Email Opened';
+    case 'APPLIED':
+      return 'Applied';
+    case 'FAILED':
+      return 'Needs Attention';
+    default:
+      return 'Draft';
+  }
+}
 
 export default function JobsScreen() {
   const router = useRouter();
@@ -83,6 +108,8 @@ export default function JobsScreen() {
         ? `Applied ${formatRelativeDate(item.appliedAt)}`
         : formatRelativeDate(item.updatedAt);
 
+    const stageLabel = getWorkflowLabel(item.workflowState);
+
     return (
       <TouchableOpacity
         style={styles.jobCard}
@@ -103,12 +130,11 @@ export default function JobsScreen() {
 
         <View style={styles.cardMetaRow}>
           <Text style={Typography.caption}>{dateLabel}</Text>
-          {item.analysis ? (
-            <View style={styles.analyzedBadge}>
-              <Feather name="check" size={10} color={Colors.primary} />
-              <Text style={styles.analyzedBadgeText}>JD Analyzed</Text>
-            </View>
-          ) : null}
+
+          <View style={styles.stagePill}>
+            <Text style={styles.stagePillText}>{stageLabel}</Text>
+          </View>
+
           <Feather name="chevron-right" size={14} color={Colors.textMuted} style={styles.arrowIcon} />
         </View>
       </TouchableOpacity>
@@ -140,11 +166,11 @@ export default function JobsScreen() {
             placeholderTextColor={Colors.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            clearButtonMode="while-editing"
           />
           {searchQuery.length > 0 && (
-            <TouchableOpacity
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              onPress={() => setSearchQuery('')}>
+            <TouchableOpacity onPress={() => setSearchQuery('')}>
               <Feather name="x-circle" size={IconSizes.sm} color={Colors.textMuted} />
             </TouchableOpacity>
           )}
@@ -152,29 +178,20 @@ export default function JobsScreen() {
       </View>
 
       {/* Filter Chips */}
-      <View style={styles.filterChipsContainer}>
+      <View style={styles.filterContainer}>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterChipsRow}>
+          contentContainerStyle={styles.filterScroll}>
           {FILTER_OPTIONS.map((status) => {
             const isSelected = selectedStatus === status;
-            const count =
-              status === 'All' ? jobs.length : statusCounts[status] || 0;
-
+            const count = status === 'All' ? jobs.length : statusCounts[status] || 0;
             return (
               <TouchableOpacity
                 key={status}
-                style={[
-                  styles.filterChip,
-                  isSelected && styles.filterChipSelected,
-                ]}
+                style={[styles.filterChip, isSelected && styles.filterChipActive]}
                 onPress={() => setSelectedStatus(status)}>
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    isSelected && styles.filterChipTextSelected,
-                  ]}>
+                <Text style={[styles.filterChipText, isSelected && styles.filterChipTextActive]}>
                   {status} ({count})
                 </Text>
               </TouchableOpacity>
@@ -183,6 +200,7 @@ export default function JobsScreen() {
         </ScrollView>
       </View>
 
+      {/* Job Cards List */}
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
@@ -190,21 +208,24 @@ export default function JobsScreen() {
         </View>
       ) : filteredJobs.length === 0 ? (
         <EmptyState
-          icon={searchQuery || selectedStatus !== 'All' ? 'search' : 'briefcase'}
-          title={searchQuery || selectedStatus !== 'All' ? 'No matching jobs' : 'No applications yet'}
-          description={
-            searchQuery || selectedStatus !== 'All'
-              ? 'Try adjusting your search or status filter.'
-              : 'Add your first job to start tailoring resumes.'
+          title={
+            searchQuery.trim()
+              ? 'No Matching Jobs'
+              : selectedStatus !== 'All'
+              ? `No ${selectedStatus} Applications`
+              : 'No Applications Yet'
           }
-          actionLabel={searchQuery || selectedStatus !== 'All' ? 'Clear Filters' : 'Add Job'}
-          actionIcon={searchQuery || selectedStatus !== 'All' ? 'x-circle' : 'plus'}
+          description={
+            searchQuery.trim()
+              ? `No jobs match "${searchQuery}". Try different keywords.`
+              : selectedStatus !== 'All'
+              ? `No jobs currently in ${selectedStatus} status.`
+              : 'Paste a job description to start an automated application pipeline.'
+          }
+          actionLabel={searchQuery || selectedStatus !== 'All' ? undefined : 'Start Application'}
           onAction={
             searchQuery || selectedStatus !== 'All'
-              ? () => {
-                  setSearchQuery('');
-                  setSelectedStatus('All');
-                }
+              ? undefined
               : () => router.push('/jobs/new')
           }
         />
@@ -228,45 +249,45 @@ const styles = StyleSheet.create({
   },
   searchContainer: {
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.surface,
   },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: Colors.border,
+    backgroundColor: Colors.surfaceSubtle,
     borderRadius: Radius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
+    borderWidth: 1,
+    borderColor: Colors.border,
     gap: Spacing.sm,
   },
   searchInput: {
     flex: 1,
     fontSize: 14,
     color: Colors.textPrimary,
-    padding: 0,
+    paddingVertical: 0,
   },
-  filterChipsContainer: {
+  filterContainer: {
+    backgroundColor: Colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: Colors.border,
-    backgroundColor: Colors.surface,
-    paddingBottom: Spacing.sm,
+    paddingVertical: Spacing.sm,
   },
-  filterChipsRow: {
+  filterScroll: {
     paddingHorizontal: Spacing.lg,
     gap: Spacing.xs,
   },
   filterChip: {
     backgroundColor: Colors.surfaceSubtle,
+    borderRadius: Radius.full,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 6,
     borderWidth: 1,
     borderColor: Colors.border,
-    borderRadius: Radius.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 5,
   },
-  filterChipSelected: {
+  filterChipActive: {
     backgroundColor: Colors.primary,
     borderColor: Colors.primary,
   },
@@ -275,26 +296,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.textSecondary,
   },
-  filterChipTextSelected: {
+  filterChipTextActive: {
     color: Colors.textInverse,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
   },
   listContent: {
     padding: Spacing.lg,
     paddingBottom: Spacing.xxxl,
+    gap: Spacing.md,
   },
   jobCard: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
+    padding: Spacing.lg,
     borderWidth: 1,
     borderColor: Colors.border,
-    padding: Spacing.lg,
-    marginBottom: Spacing.sm,
+    gap: Spacing.md,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -308,27 +324,29 @@ const styles = StyleSheet.create({
   cardMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
-    marginTop: Spacing.md,
+    gap: Spacing.md,
     paddingTop: Spacing.sm,
     borderTopWidth: 1,
     borderTopColor: Colors.borderLight,
   },
-  analyzedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  stagePill: {
     backgroundColor: Colors.primaryLight,
-    borderRadius: Radius.sm,
-    paddingHorizontal: 6,
+    paddingHorizontal: 8,
     paddingVertical: 2,
-    gap: 3,
+    borderRadius: Radius.sm,
   },
-  analyzedBadgeText: {
+  stagePillText: {
     fontSize: 11,
     fontWeight: '600',
-    color: Colors.primary,
+    color: Colors.primaryDark,
   },
   arrowIcon: {
     marginLeft: 'auto',
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
   },
 });

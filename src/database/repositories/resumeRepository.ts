@@ -33,6 +33,7 @@ interface ResumeLibraryRow {
   job_status?: string | null;
   job_company?: string | null;
   job_role?: string | null;
+  is_approved?: number | boolean | null;
 }
 
 function mapRowToVersion(row: ResumeVersionRow): ResumeVersion {
@@ -66,6 +67,7 @@ function mapRowToLibraryItem(row: ResumeLibraryRow): ResumeLibraryItem {
     jobStatus: (row.job_status as JobStatus) || null,
     jobCompany: row.job_company || null,
     jobRole: row.job_role || null,
+    isApproved: !!row.is_approved,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -138,7 +140,7 @@ export const resumeRepository = {
   async updateResumePdf(
     id: string,
     pdfPath: string | null,
-    status: ResumeGenerationStatus,
+    generationStatus: ResumeGenerationStatus,
     errorLog: string | null = null
   ): Promise<void> {
     const db = await getDatabase();
@@ -152,7 +154,7 @@ export const resumeRepository = {
          updated_at = ?
        WHERE id = ?;`,
       pdfPath,
-      status,
+      generationStatus,
       errorLog,
       now,
       id
@@ -160,8 +162,8 @@ export const resumeRepository = {
   },
 
   /**
-   * Retrieves all resume versions across all jobs for the Resume Library,
-   * joining with jobs to include live application status.
+   * Retrieves all resume versions across all applications for the Dedicated Resume Library.
+   * Sorted newest-generated first.
    */
   async getAllResumeVersions(): Promise<ResumeLibraryItem[]> {
     const db = await getDatabase();
@@ -179,7 +181,8 @@ export const resumeRepository = {
         rv.updated_at,
         j.status as job_status,
         j.company as job_company,
-        j.role as job_role
+        j.role as job_role,
+        (CASE WHEN j.approved_resume_version_id = rv.id THEN 1 ELSE 0 END) as is_approved
       FROM resume_versions rv
       LEFT JOIN jobs j ON rv.job_id = j.id
       ORDER BY rv.created_at DESC;
@@ -214,9 +217,11 @@ export const resumeRepository = {
   /**
    * Retrieves a resume version by ID along with joined job status.
    */
-  async getResumeLibraryDetails(id: string): Promise<(ResumeVersion & { jobStatus?: JobStatus | null }) | null> {
+  async getResumeLibraryDetails(
+    id: string
+  ): Promise<(ResumeVersion & { jobStatus?: JobStatus | null; isApproved?: boolean }) | null> {
     const db = await getDatabase();
-    const row = await db.getFirstAsync<ResumeVersionRow & { job_status?: string | null }>(`
+    const row = await db.getFirstAsync<ResumeVersionRow & { job_status?: string | null; is_approved?: number | null }>(`
       SELECT
         rv.id,
         rv.job_id,
@@ -231,7 +236,8 @@ export const resumeRepository = {
         rv.error_log,
         rv.created_at,
         rv.updated_at,
-        j.status as job_status
+        j.status as job_status,
+        (CASE WHEN j.approved_resume_version_id = rv.id THEN 1 ELSE 0 END) as is_approved
       FROM resume_versions rv
       LEFT JOIN jobs j ON rv.job_id = j.id
       WHERE rv.id = ?;
@@ -242,6 +248,7 @@ export const resumeRepository = {
     return {
       ...mapRowToVersion(row),
       jobStatus: (row.job_status as JobStatus) || null,
+      isApproved: !!row.is_approved,
     };
   },
 
@@ -258,23 +265,24 @@ export const resumeRepository = {
   },
 
   /**
-   * Deletes a resume version from SQLite and removes its PDF file if on disk.
+   * Deletes a resume version from SQLite and removes its local PDF file.
    */
   async deleteResumeVersion(id: string): Promise<void> {
     const db = await getDatabase();
-    const version = await this.getResumeVersion(id);
+    const current = await this.getResumeVersion(id);
 
-    await db.runAsync('DELETE FROM resume_versions WHERE id = ?;', id);
-
-    if (version?.pdfPath) {
+    if (current && current.pdfPath) {
       try {
         const FileSystem = await import('expo-file-system/legacy');
-        if (FileSystem?.deleteAsync) {
-          await FileSystem.deleteAsync(version.pdfPath, { idempotent: true });
+        const fileInfo = await FileSystem.getInfoAsync(current.pdfPath);
+        if (fileInfo.exists) {
+          await FileSystem.deleteAsync(current.pdfPath, { idempotent: true });
         }
       } catch {
         // Non-blocking file deletion
       }
     }
+
+    await db.runAsync('DELETE FROM resume_versions WHERE id = ?;', id);
   },
 };

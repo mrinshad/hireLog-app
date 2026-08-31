@@ -74,7 +74,7 @@ export default function NewJobScreen() {
         status,
       });
 
-      router.replace(`/jobs/${newJob.id}`);
+      router.replace(`/jobs/progress/${newJob.id}` as any);
     } catch (error) {
       console.error('Failed to create job:', error);
       Alert.alert('Error', 'Failed to save job to local storage.');

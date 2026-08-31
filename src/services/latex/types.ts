@@ -82,6 +82,7 @@ export interface ResumeLibraryItem {
   jobStatus?: JobStatus | null;
   jobCompany?: string | null;
   jobRole?: string | null;
+  isApproved?: boolean;
   createdAt: string;
   updatedAt: string;
 }

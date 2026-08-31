@@ -26,7 +26,8 @@ import { latexRenderer } from '@/services/latex/latexRenderer';
 import { ResumeVersion } from '@/services/latex/types';
 import { matchingEngine } from '@/services/matching/matchingEngine';
 import { resumeCustomizer } from '@/services/resume/resumeCustomizer';
-import { resumeValidator, ResumeValidationError } from '@/services/resume/resumeValidator';
+import { resumeValidator } from '@/services/resume/resumeValidator';
+import { workflowOrchestrator } from '@/services/workflow/workflowOrchestrator';
 import { Job } from '@/types/job';
 import { CustomizedResume } from '@/types/resume';
 
@@ -40,6 +41,7 @@ export default function ResumePreviewScreen() {
   const [selectedVersion, setSelectedVersion] = useState<ResumeVersion | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
   const [generationStep, setGenerationStep] = useState<string>('');
   const [isCopied, setIsCopied] = useState(false);
   const [showErrorLog, setShowErrorLog] = useState(false);
@@ -57,7 +59,7 @@ export default function ResumePreviewScreen() {
       }
 
       const profile = await profileRepository.getProfile();
-      const matchResult = matchingEngine.match(profile, jobData.analysis);
+      const matchResult = jobData.matchResult || matchingEngine.match(profile, jobData.analysis);
       const tailored = resumeCustomizer.customize(
         profile,
         jobData.analysis,
@@ -69,7 +71,9 @@ export default function ResumePreviewScreen() {
       const existingVersions = await resumeRepository.getResumeVersions(jobData.id);
       setVersions(existingVersions);
       if (existingVersions.length > 0) {
-        setSelectedVersion(existingVersions[0]);
+        // If there's an approved version, select it by default, otherwise newest
+        const approvedVer = existingVersions.find((v) => v.id === jobData.approvedResumeVersionId);
+        setSelectedVersion(approvedVer || existingVersions[0]);
       }
     } catch (error) {
       console.error('Failed to load resume preview data:', error);
@@ -83,7 +87,32 @@ export default function ResumePreviewScreen() {
     loadData();
   }, [id]);
 
-  const handleGenerateResume = async () => {
+  const handleApproveAndContinue = async () => {
+    if (!job || !selectedVersion) return;
+
+    if (selectedVersion.generationStatus !== 'Generated' || !selectedVersion.pdfPath) {
+      Alert.alert('PDF Not Ready', 'Please ensure the PDF has finished compiling before approving.');
+      return;
+    }
+
+    try {
+      setIsApproving(true);
+      const result = await workflowOrchestrator.approveResume(job.id, selectedVersion.id);
+
+      if (result.success && result.nextRoute) {
+        router.replace(result.nextRoute as any);
+      } else {
+        Alert.alert('Approval Failed', result.error || 'Failed to advance workflow.');
+      }
+    } catch (error: any) {
+      console.error('Approval error:', error);
+      Alert.alert('Error', error.message || 'Failed to approve resume.');
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  const handleGenerateNewVersion = async () => {
     if (!job || !customizedResume) return;
 
     try {
@@ -217,17 +246,20 @@ export default function ResumePreviewScreen() {
       <SafeAreaView style={styles.safeArea}>
         <AppHeader title="Resume Preview" showBack />
         <View style={styles.emptyContainer}>
-          <Text style={Typography.sectionTitle}>JD Analysis Required</Text>
+          <Text style={Typography.sectionTitle}>Application Not Ready</Text>
           <PrimaryButton title="Return to Job" icon="arrow-left" onPress={() => router.back()} />
         </View>
       </SafeAreaView>
     );
   }
 
+  const isApproved = job.approvedResumeVersionId === selectedVersion?.id;
+  const isPdfReady = selectedVersion?.generationStatus === 'Generated' && !!selectedVersion.pdfPath;
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <AppHeader
-        title="Resume Preview"
+        title="Resume Approval"
         subtitle={job.company}
         showBack
       />
@@ -248,19 +280,70 @@ export default function ResumePreviewScreen() {
               <Text style={styles.matchBadgeText}>{customizedResume.overallMatchScore}% Match</Text>
             </View>
           </View>
+
+          {isApproved && (
+            <View style={styles.approvedBanner}>
+              <Feather name="check-circle" size={14} color={Colors.successText} />
+              <Text style={styles.approvedBannerText}>Approved for Application</Text>
+            </View>
+          )}
         </Card>
 
-        {/* Version History Selector */}
-        {versions.length > 0 && (
+        {/* Gate 1 Approval Action Card */}
+        <Card style={styles.approvalGateCard}>
+          <Text style={Typography.sectionTitle}>Gate 1: Review & Approve Resume</Text>
+          <Text style={[Typography.caption, { marginVertical: Spacing.xs }]}>
+            Review the tailored PDF resume below. Approving will automatically prepare the application email.
+          </Text>
+
+          {isPdfReady ? (
+            <View style={styles.approvalActions}>
+              <PrimaryButton
+                title={isApproved ? 'Proceed to Email Review →' : 'Approve & Continue →'}
+                icon="check"
+                size="lg"
+                loading={isApproving}
+                onPress={handleApproveAndContinue}
+                style={styles.primaryApproveBtn}
+              />
+              <View style={styles.subActionRow}>
+                <SecondaryButton
+                  title="Preview PDF"
+                  icon="eye"
+                  size="sm"
+                  onPress={handleOpenPdf}
+                  style={{ flex: 1 }}
+                />
+                <SecondaryButton
+                  title="Share"
+                  icon="share-2"
+                  size="sm"
+                  onPress={handleOpenPdf}
+                  style={{ flex: 1 }}
+                />
+              </View>
+            </View>
+          ) : (
+            <View style={styles.compilingBox}>
+              <ActivityIndicator size="small" color={Colors.primary} />
+              <Text style={Typography.caption}>
+                {generationStep || 'PDF document is compiling...'}
+              </Text>
+            </View>
+          )}
+        </Card>
+
+        {/* Version Selector */}
+        {versions.length > 1 && (
           <Card style={styles.card}>
-            <Text style={Typography.sectionTitle}>Versions ({versions.length})</Text>
+            <Text style={Typography.sectionTitle}>Resume Versions ({versions.length})</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.versionChipsRow}>
               {versions.map((ver) => {
                 const isSelected = selectedVersion?.id === ver.id;
-                const isSuccess = ver.generationStatus === 'Generated' && ver.pdfPath;
+                const isVersionApproved = ver.id === job.approvedResumeVersionId;
                 return (
                   <TouchableOpacity
                     key={ver.id}
@@ -275,12 +358,9 @@ export default function ResumePreviewScreen() {
                         styles.versionChipText,
                         isSelected && styles.versionChipTextSelected,
                       ]}>
-                      {isSuccess ? '✓ ' : ver.generationStatus === 'Failed' ? '✕ ' : ''}
-                      v{ver.versionNumber} •{' '}
-                      {new Date(ver.createdAt).toLocaleDateString(undefined, {
-                        month: 'short',
-                        day: 'numeric',
-                      })}
+                      {isVersionApproved ? '★ ' : '✓ '}
+                      v{ver.versionNumber}
+                      {isVersionApproved ? ' (Approved)' : ''}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -289,71 +369,11 @@ export default function ResumePreviewScreen() {
           </Card>
         )}
 
-        {/* Active PDF Status & Actions */}
-        {selectedVersion?.generationStatus === 'Generated' && selectedVersion.pdfPath ? (
-          <Card style={styles.card}>
-            <View style={styles.readyRow}>
-              <Feather name="check-circle" size={IconSizes.sm} color={Colors.successText} />
-              <View style={{ flex: 1 }}>
-                <Text style={Typography.bodyMedium}>Resume PDF Ready (v{selectedVersion.versionNumber})</Text>
-                <Text style={Typography.caption}>Saved to on-device storage</Text>
-              </View>
-            </View>
-
-            <View style={styles.actionRow}>
-              <PrimaryButton
-                title="Preview PDF"
-                icon="eye"
-                onPress={handleOpenPdf}
-                style={{ flex: 1 }}
-              />
-              <SecondaryButton
-                title="Share"
-                icon="share-2"
-                onPress={handleOpenPdf}
-                style={{ flex: 1 }}
-              />
-            </View>
-
-            <SecondaryButton
-              title="Compose Application Email"
-              icon="mail"
-              onPress={() => router.push(`/jobs/email/${job.id}`)}
-              style={{ marginTop: Spacing.sm }}
-            />
-          </Card>
-        ) : selectedVersion?.generationStatus === 'Failed' ? (
-          <Card style={styles.card}>
-            <Text style={[Typography.sectionTitle, { color: Colors.errorText }]}>
-              Compilation Failed
-            </Text>
-            <Text style={[Typography.caption, { marginVertical: Spacing.xs }]}>
-              The LaTeX compiler encountered an issue.
-            </Text>
-            {selectedVersion.errorLog && (
-              <TouchableOpacity
-                style={styles.toggleLogBtn}
-                onPress={() => setShowErrorLog(!showErrorLog)}>
-                <Text style={styles.toggleLogText}>
-                  {showErrorLog ? 'Hide Logs' : 'View Error Logs'}
-                </Text>
-              </TouchableOpacity>
-            )}
-            {showErrorLog && selectedVersion.errorLog ? (
-              <View style={styles.errorLogBox}>
-                <Text style={styles.errorLogText}>{selectedVersion.errorLog}</Text>
-              </View>
-            ) : null}
-          </Card>
-        ) : null}
-
-        {/* Action: Generate / Regenerate PDF Resume */}
+        {/* Regenerate Option */}
         <Card style={styles.card}>
-          <Text style={Typography.sectionTitle}>
-            {selectedVersion ? 'Regenerate Resume' : 'Generate PDF Resume'}
-          </Text>
+          <Text style={Typography.sectionTitle}>Need Changes?</Text>
           <Text style={[Typography.caption, { marginVertical: Spacing.xs }]}>
-            Compiles your verified profile into ATS-compliant master LaTeX template.
+            Generate a new version from your latest profile details without overwriting version history.
           </Text>
 
           {isGenerating ? (
@@ -362,16 +382,17 @@ export default function ResumePreviewScreen() {
               <Text style={Typography.caption}>{generationStep || 'Compiling resume...'}</Text>
             </View>
           ) : (
-            <PrimaryButton
-              title={selectedVersion ? 'Generate New Version' : 'Generate PDF Resume'}
-              icon="file-text"
-              onPress={handleGenerateResume}
+            <SecondaryButton
+              title="Generate New Version"
+              icon="refresh-cw"
+              size="sm"
+              onPress={handleGenerateNewVersion}
               style={{ marginTop: Spacing.sm }}
             />
           )}
         </Card>
 
-        {/* LaTeX Source Viewer */}
+        {/* LaTeX Source Inspector */}
         {selectedVersion && (
           <Card style={styles.card}>
             <View style={styles.latexHeaderRow}>
@@ -433,7 +454,7 @@ const styles = StyleSheet.create({
     gap: Spacing.lg,
   },
   heroCard: {
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   heroTopRow: {
     flexDirection: 'row',
@@ -457,8 +478,47 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.primaryDark,
   },
+  approvedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    backgroundColor: Colors.successBg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 4,
+    borderRadius: Radius.sm,
+    marginTop: Spacing.md,
+  },
+  approvedBannerText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.successText,
+  },
+  approvalGateCard: {
+    marginBottom: Spacing.md,
+    borderColor: Colors.primaryBorder,
+  },
+  approvalActions: {
+    marginTop: Spacing.md,
+    gap: Spacing.sm,
+  },
+  primaryApproveBtn: {
+    marginBottom: Spacing.xs,
+  },
+  subActionRow: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  compilingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.surfaceSubtle,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    marginTop: Spacing.sm,
+  },
   card: {
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
   },
   versionChipsRow: {
     gap: Spacing.xs,
@@ -487,19 +547,6 @@ const styles = StyleSheet.create({
   },
   versionChipTextSelected: {
     color: Colors.textInverse,
-  },
-  readyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    backgroundColor: Colors.successBg,
-    padding: Spacing.md,
-    borderRadius: Radius.md,
-    marginBottom: Spacing.md,
-  },
-  actionRow: {
-    flexDirection: 'row',
-    gap: Spacing.md,
   },
   generatingBox: {
     flexDirection: 'row',
@@ -553,24 +600,5 @@ const styles = StyleSheet.create({
     fontFamily: 'monospace',
     fontSize: 11,
     lineHeight: 15,
-  },
-  toggleLogBtn: {
-    paddingVertical: Spacing.xs,
-  },
-  toggleLogText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.errorText,
-  },
-  errorLogBox: {
-    backgroundColor: Colors.textPrimary,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    marginTop: Spacing.xs,
-  },
-  errorLogText: {
-    color: '#FECACA',
-    fontFamily: 'monospace',
-    fontSize: 11,
   },
 });
