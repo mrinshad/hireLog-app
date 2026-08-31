@@ -337,6 +337,13 @@ export default function ResumePreviewScreen() {
                 <Text style={styles.sharePdfBtnText}>📤 Share</Text>
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              style={styles.composeEmailBtn}
+              activeOpacity={0.8}
+              onPress={() => router.push(`/jobs/email/${job.id}`)}>
+              <Text style={styles.composeEmailBtnText}>✉️ Compose Application Email →</Text>
+            </TouchableOpacity>
           </View>
         ) : selectedVersion?.generationStatus === 'Failed' ? (
           <View style={styles.failedCard}>
@@ -712,6 +719,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     color: '#166534',
+  },
+  composeEmailBtn: {
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  composeEmailBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   failedCard: {
     backgroundColor: '#FEF2F2',

@@ -5,6 +5,8 @@ import { up as migration002 } from './002_create_jobs_table';
 import { up as migration003 } from './003_add_job_analysis_and_settings';
 import { up as migration004 } from './004_create_resume_versions_table';
 import { up as migration005 } from './005_add_pdf_to_resume_versions';
+import { up as migration006 } from './006_create_email_drafts_table';
+import { up as migration007 } from './007_add_applied_at_and_status_history';
 
 export interface Migration {
   version: number;
@@ -37,6 +39,16 @@ export const MIGRATIONS: Migration[] = [
     version: 5,
     name: '005_add_pdf_to_resume_versions',
     up: migration005,
+  },
+  {
+    version: 6,
+    name: '006_create_email_drafts_table',
+    up: migration006,
+  },
+  {
+    version: 7,
+    name: '007_add_applied_at_and_status_history',
+    up: migration007,
   },
 ];
 

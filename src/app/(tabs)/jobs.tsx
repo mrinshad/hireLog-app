@@ -2,6 +2,7 @@ import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -12,22 +13,16 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 
 import { jobRepository } from '@/database/repositories/jobRepository';
-import { Job, JobStatus } from '@/types/job';
+import { formatRelativeDate, STATUS_CONFIG } from '@/services/tracking/trackingHelpers';
+import { Job, JOB_STATUSES, JobStatus } from '@/types/job';
 
-const STATUS_COLORS: Record<JobStatus, { bg: string; text: string; border: string }> = {
-  Draft: { bg: '#F1F5F9', text: '#475569', border: '#CBD5E1' },
-  Ready: { bg: '#EFF6FF', text: '#2563EB', border: '#BFDBFE' },
-  Applied: { bg: '#FEF3C7', text: '#D97706', border: '#FDE68A' },
-  Interview: { bg: '#EDE9FE', text: '#7C3AED', border: '#DDD6FE' },
-  Offer: { bg: '#DCFCE7', text: '#16A34A', border: '#BBF7D0' },
-  Rejected: { bg: '#FEE2E2', text: '#DC2626', border: '#FECACA' },
-  Withdrawn: { bg: '#F3F4F6', text: '#6B7280', border: '#E5E7EB' },
-};
+const FILTER_OPTIONS: Array<'All' | JobStatus> = ['All', ...JOB_STATUSES];
 
 export default function JobsScreen() {
   const router = useRouter();
 
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [selectedStatus, setSelectedStatus] = useState<'All' | JobStatus>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
@@ -56,23 +51,37 @@ export default function JobsScreen() {
     }, [])
   );
 
+  // Calculate status counts
+  const statusCounts = jobs.reduce<Record<string, number>>((acc, job) => {
+    acc[job.status] = (acc[job.status] || 0) + 1;
+    return acc;
+  }, {});
+
+  // Local filtering & searching (zero AI, 100% deterministic)
   const filteredJobs = jobs.filter((job) => {
-    if (!searchQuery.trim()) return true;
-    const query = searchQuery.toLowerCase();
-    return (
-      job.role.toLowerCase().includes(query) ||
-      job.company.toLowerCase().includes(query) ||
-      job.location.toLowerCase().includes(query) ||
-      job.status.toLowerCase().includes(query)
-    );
+    // 1. Status Filter
+    if (selectedStatus !== 'All' && job.status !== selectedStatus) {
+      return false;
+    }
+
+    // 2. Search Query (Role, Company, Location)
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const roleMatch = (job.role || '').toLowerCase().includes(q);
+      const compMatch = (job.company || '').toLowerCase().includes(q);
+      const locMatch = (job.location || '').toLowerCase().includes(q);
+      return roleMatch || compMatch || locMatch;
+    }
+
+    return true;
   });
 
   const renderJobItem = ({ item }: { item: Job }) => {
-    const statusStyle = STATUS_COLORS[item.status] || STATUS_COLORS.Draft;
-    const formattedDate = new Date(item.createdAt).toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-    });
+    const statusStyle = STATUS_CONFIG[item.status] || STATUS_CONFIG.Draft;
+    const dateLabel =
+      item.status === 'Applied' && item.appliedAt
+        ? `Applied on ${formatRelativeDate(item.appliedAt)}`
+        : `Updated ${formatRelativeDate(item.updatedAt)}`;
 
     return (
       <TouchableOpacity
@@ -94,7 +103,7 @@ export default function JobsScreen() {
               { backgroundColor: statusStyle.bg, borderColor: statusStyle.border },
             ]}>
             <Text style={[styles.statusText, { color: statusStyle.text }]}>
-              {item.status}
+              {statusStyle.icon} {statusStyle.label}
             </Text>
           </View>
         </View>
@@ -105,12 +114,12 @@ export default function JobsScreen() {
               📍 {item.location}
             </Text>
           ) : null}
-          {item.salary ? (
-            <Text style={styles.metaText} numberOfLines={1}>
-              💰 {item.salary}
-            </Text>
+          {item.analysis ? (
+            <View style={styles.analyzedBadge}>
+              <Text style={styles.analyzedBadgeText}>✓ Analyzed</Text>
+            </View>
           ) : null}
-          <Text style={styles.dateText}>Added {formattedDate}</Text>
+          <Text style={styles.dateText}>{dateLabel}</Text>
         </View>
 
         {/* JD snippet */}
@@ -126,9 +135,10 @@ export default function JobsScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.title}>Jobs & Applications</Text>
+          <Text style={styles.title}>Job Applications</Text>
           <Text style={styles.subtitle}>
-            {jobs.length} {jobs.length === 1 ? 'posting' : 'postings'} tracked
+            {filteredJobs.length} {filteredJobs.length === 1 ? 'application' : 'applications'}
+            {selectedStatus !== 'All' ? ` in ${selectedStatus}` : ' total'}
           </Text>
         </View>
         <TouchableOpacity
@@ -138,39 +148,88 @@ export default function JobsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* Search bar */}
-      {jobs.length > 0 ? (
-        <View style={styles.searchContainer}>
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search by role, company, location, or status..."
-            placeholderTextColor="#94A3B8"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
-      ) : null}
+      {/* Local Search bar */}
+      <View style={styles.searchContainer}>
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search by role, company, or location..."
+          placeholderTextColor="#94A3B8"
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity
+            style={styles.clearSearchBtn}
+            onPress={() => setSearchQuery('')}>
+            <Text style={styles.clearSearchText}>✕</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {/* Horizontal Status Filter Chips */}
+      <View style={styles.filterChipsContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterChipsRow}>
+          {FILTER_OPTIONS.map((status) => {
+            const isSelected = selectedStatus === status;
+            const count =
+              status === 'All' ? jobs.length : statusCounts[status] || 0;
+
+            return (
+              <TouchableOpacity
+                key={status}
+                style={[
+                  styles.filterChip,
+                  isSelected && styles.filterChipSelected,
+                ]}
+                onPress={() => setSelectedStatus(status)}>
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    isSelected && styles.filterChipTextSelected,
+                  ]}>
+                  {status} ({count})
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </View>
 
       {isLoading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#2563EB" />
-          <Text style={styles.loadingText}>Loading Jobs...</Text>
+          <Text style={styles.loadingText}>Loading Applications...</Text>
         </View>
-      ) : jobs.length === 0 ? (
+      ) : filteredJobs.length === 0 ? (
         <View style={styles.emptyContainer}>
           <View style={styles.emptyIconCircle}>
-            <Text style={styles.emptyIcon}>💼</Text>
+            <Text style={styles.emptyIcon}>🔍</Text>
           </View>
-          <Text style={styles.emptyTitle}>No jobs yet</Text>
+          <Text style={styles.emptyTitle}>No matching applications</Text>
           <Text style={styles.emptySubtext}>
-            Paste Job Descriptions from LinkedIn, Indeed, or company sites. HireLog will preserve
-            the JD to tailor resumes in upcoming modules.
+            {searchQuery.trim()
+              ? `No jobs matched "${searchQuery}" in ${selectedStatus}.`
+              : `No applications found with status "${selectedStatus}".`}
           </Text>
-          <TouchableOpacity
-            style={styles.createFirstBtn}
-            onPress={() => router.push('/jobs/new')}>
-            <Text style={styles.createFirstText}>+ Add Your First Job</Text>
-          </TouchableOpacity>
+          {searchQuery.trim() || selectedStatus !== 'All' ? (
+            <TouchableOpacity
+              style={styles.resetFilterBtn}
+              onPress={() => {
+                setSearchQuery('');
+                setSelectedStatus('All');
+              }}>
+              <Text style={styles.resetFilterText}>Clear Filters</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={styles.createFirstBtn}
+              onPress={() => router.push('/jobs/new')}>
+              <Text style={styles.createFirstText}>+ Add Your First Job</Text>
+            </TouchableOpacity>
+          )}
         </View>
       ) : (
         <FlatList
@@ -226,7 +285,8 @@ const styles = StyleSheet.create({
   searchContainer: {
     paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 4,
+    paddingBottom: 8,
+    position: 'relative',
   },
   searchInput: {
     backgroundColor: '#FFFFFF',
@@ -235,8 +295,53 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 9,
+    paddingRight: 36,
     fontSize: 14,
     color: '#0F172A',
+  },
+  clearSearchBtn: {
+    position: 'absolute',
+    right: 26,
+    top: 20,
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearSearchText: {
+    fontSize: 14,
+    color: '#94A3B8',
+    fontWeight: '700',
+  },
+  filterChipsContainer: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    paddingBottom: 10,
+  },
+  filterChipsRow: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  filterChip: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  filterChipSelected: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  filterChipTextSelected: {
+    color: '#FFFFFF',
   },
   loadingContainer: {
     flex: 1,
@@ -284,7 +389,7 @@ const styles = StyleSheet.create({
   statusBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 10,
+    borderRadius: 8,
     borderWidth: 1,
   },
   statusText: {
@@ -294,7 +399,7 @@ const styles = StyleSheet.create({
   cardMetaRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: 8,
     marginTop: 8,
     alignItems: 'center',
   },
@@ -302,6 +407,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#64748B',
     fontWeight: '500',
+  },
+  analyzedBadge: {
+    backgroundColor: '#EFF6FF',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  analyzedBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#2563EB',
   },
   dateText: {
     fontSize: 11,
@@ -336,18 +452,31 @@ const styles = StyleSheet.create({
     fontSize: 28,
   },
   emptyTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     color: '#0F172A',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   emptySubtext: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#64748B',
     textAlign: 'center',
-    lineHeight: 20,
-    marginBottom: 20,
-    maxWidth: 320,
+    lineHeight: 18,
+    marginBottom: 18,
+    maxWidth: 300,
+  },
+  resetFilterBtn: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  resetFilterText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
   },
   createFirstBtn: {
     backgroundColor: '#2563EB',

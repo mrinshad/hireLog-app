@@ -53,18 +53,39 @@ export interface Job {
   source?: string;
   sourceUrl?: string;
   status: JobStatus;
+  appliedAt?: string | null;
   analysisStatus: AnalysisStatus;
   analysis?: JobAnalysis | null;
   createdAt: string;
   updatedAt: string;
 }
 
+export interface JobStatusHistory {
+  id: string;
+  jobId: string;
+  oldStatus: JobStatus;
+  newStatus: JobStatus;
+  changedAt: string;
+}
+
+export interface DashboardMetrics {
+  total: number;
+  draft: number;
+  ready: number;
+  applied: number;
+  interview: number;
+  offer: number;
+  rejected: number;
+  withdrawn: number;
+}
+
 export type CreateJobInput = Omit<
   Job,
-  'id' | 'createdAt' | 'updatedAt' | 'analysisStatus' | 'analysis'
+  'id' | 'createdAt' | 'updatedAt' | 'analysisStatus' | 'analysis' | 'appliedAt'
 > & {
   id?: string;
   status?: JobStatus;
+  appliedAt?: string | null;
   analysisStatus?: AnalysisStatus;
   analysis?: JobAnalysis | null;
 };

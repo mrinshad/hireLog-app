@@ -10,22 +10,22 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
 
 import { jobRepository } from '@/database/repositories/jobRepository';
-import { Job, JobStatus } from '@/types/job';
-
-const STATUS_COLORS: Record<JobStatus, { bg: string; text: string }> = {
-  Draft: { bg: '#F1F5F9', text: '#475569' },
-  Ready: { bg: '#EFF6FF', text: '#2563EB' },
-  Applied: { bg: '#FEF3C7', text: '#D97706' },
-  Interview: { bg: '#EDE9FE', text: '#7C3AED' },
-  Offer: { bg: '#DCFCE7', text: '#16A34A' },
-  Rejected: { bg: '#FEE2E2', text: '#DC2626' },
-  Withdrawn: { bg: '#F3F4F6', text: '#6B7280' },
-};
+import { formatRelativeDate, STATUS_CONFIG } from '@/services/tracking/trackingHelpers';
+import { DashboardMetrics, Job } from '@/types/job';
 
 export default function HomeScreen() {
   const router = useRouter();
 
-  const [metrics, setMetrics] = useState({ total: 0, draft: 0, applied: 0, interview: 0 });
+  const [metrics, setMetrics] = useState<DashboardMetrics>({
+    total: 0,
+    draft: 0,
+    ready: 0,
+    applied: 0,
+    interview: 0,
+    offer: 0,
+    rejected: 0,
+    withdrawn: 0,
+  });
   const [recentJobs, setRecentJobs] = useState<Job[]>([]);
 
   useFocusEffect(
@@ -34,8 +34,8 @@ export default function HomeScreen() {
       async function loadDashboard() {
         try {
           const [m, recents] = await Promise.all([
-            jobRepository.getMetrics(),
-            jobRepository.getRecentJobs(3),
+            jobRepository.getDashboardMetrics(),
+            jobRepository.getRecentJobs(5),
           ]);
           if (isMounted) {
             setMetrics(m);
@@ -57,7 +57,7 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>HireLog</Text>
-          <Text style={styles.subtitle}>Job application & resume manager</Text>
+          <Text style={styles.subtitle}>Applications & Career Hub</Text>
         </View>
         <TouchableOpacity
           style={styles.newAppBtn}
@@ -71,68 +71,87 @@ export default function HomeScreen() {
         style={styles.container}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
-        {/* Quick Action Hero Card */}
+        {/* Quick Action Card */}
         <View style={styles.heroCard}>
           <View style={styles.heroIconCircle}>
             <Text style={styles.heroIcon}>⚡</Text>
           </View>
           <View style={styles.heroTextContainer}>
-            <Text style={styles.heroTitle}>Start a New Application</Text>
+            <Text style={styles.heroTitle}>Track a New Job Application</Text>
             <Text style={styles.heroSubtext}>
-              Paste a job description to capture details and track your application pipeline.
+              Paste a job description to capture details, customize your resume, and track your progress.
             </Text>
           </View>
           <TouchableOpacity
             style={styles.heroActionBtn}
             onPress={() => router.push('/jobs/new')}>
-            <Text style={styles.heroActionText}>Paste JD & Start</Text>
+            <Text style={styles.heroActionText}>+ Create Application</Text>
           </TouchableOpacity>
         </View>
 
-        {/* Application Metrics Grid */}
+        {/* Application Metrics */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Application Pipeline</Text>
+          <Text style={styles.sectionTitle}>Applications Overview</Text>
         </View>
 
         <View style={styles.metricsGrid}>
-          <View style={styles.metricCard}>
-            <Text style={styles.metricNumber}>{metrics.total}</Text>
+          <View style={[styles.metricCard, styles.metricCardTotal]}>
+            <Text style={[styles.metricNumber, { color: '#2563EB' }]}>{metrics.total}</Text>
             <Text style={styles.metricLabel}>Total Jobs</Text>
           </View>
+
           <View style={styles.metricCard}>
-            <Text style={[styles.metricNumber, { color: '#475569' }]}>{metrics.draft}</Text>
-            <Text style={styles.metricLabel}>Drafts</Text>
-          </View>
-          <View style={styles.metricCard}>
-            <Text style={[styles.metricNumber, { color: '#D97706' }]}>{metrics.applied}</Text>
+            <Text style={[styles.metricNumber, { color: '#0284C7' }]}>{metrics.applied}</Text>
             <Text style={styles.metricLabel}>Applied</Text>
           </View>
+
           <View style={styles.metricCard}>
             <Text style={[styles.metricNumber, { color: '#7C3AED' }]}>{metrics.interview}</Text>
-            <Text style={styles.metricLabel}>Interview</Text>
+            <Text style={styles.metricLabel}>Interviews</Text>
+          </View>
+
+          <View style={styles.metricCard}>
+            <Text style={[styles.metricNumber, { color: '#059669' }]}>{metrics.offer}</Text>
+            <Text style={styles.metricLabel}>Offers</Text>
+          </View>
+
+          <View style={styles.metricCard}>
+            <Text style={[styles.metricNumber, { color: '#E11D48' }]}>{metrics.rejected}</Text>
+            <Text style={styles.metricLabel}>Rejected</Text>
           </View>
         </View>
 
-        {/* Recent Applications Section */}
+        {/* Recent Activity Section */}
         <View style={styles.sectionHeaderRow}>
-          <Text style={styles.sectionTitle}>Recent Applications</Text>
+          <Text style={styles.sectionTitle}>Recent Activity</Text>
           {recentJobs.length > 0 && (
             <TouchableOpacity onPress={() => router.push('/jobs')}>
-              <Text style={styles.viewAllText}>View All ({metrics.total})</Text>
+              <Text style={styles.viewAllText}>View All ({metrics.total}) →</Text>
             </TouchableOpacity>
           )}
         </View>
 
         {recentJobs.length === 0 ? (
           <View style={styles.emptyCard}>
-            <Text style={styles.emptyTitle}>No applications yet</Text>
+            <Text style={styles.emptyIcon}>📂</Text>
+            <Text style={styles.emptyTitle}>No job applications yet</Text>
             <Text style={styles.emptyText}>
-              Create your first application by tapping the &quot;+ New Application&quot; button above.
+              Start by tapping &quot;+ New Application&quot; to paste a job posting and track your progress.
             </Text>
+            <TouchableOpacity
+              style={styles.emptyActionBtn}
+              onPress={() => router.push('/jobs/new')}>
+              <Text style={styles.emptyActionText}>Add Your First Job</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           recentJobs.map((job) => {
-            const statusColor = STATUS_COLORS[job.status] || STATUS_COLORS.Draft;
+            const statusStyle = STATUS_CONFIG[job.status] || STATUS_CONFIG.Draft;
+            const relevantDate =
+              job.status === 'Applied' && job.appliedAt
+                ? `Applied · ${formatRelativeDate(job.appliedAt)}`
+                : `${statusStyle.label} · ${formatRelativeDate(job.updatedAt)}`;
+
             return (
               <TouchableOpacity
                 key={job.id}
@@ -145,12 +164,23 @@ export default function HomeScreen() {
                   </Text>
                   <Text style={styles.jobCompany} numberOfLines={1}>
                     {job.company || 'Company not specified'}
+                    {job.location ? ` • ${job.location}` : ''}
                   </Text>
                 </View>
-                <View style={[styles.statusPill, { backgroundColor: statusColor.bg }]}>
-                  <Text style={[styles.statusPillText, { color: statusColor.text }]}>
-                    {job.status}
-                  </Text>
+                <View style={styles.jobEndCol}>
+                  <View
+                    style={[
+                      styles.statusPill,
+                      {
+                        backgroundColor: statusStyle.bg,
+                        borderColor: statusStyle.border,
+                      },
+                    ]}>
+                    <Text style={[styles.statusPillText, { color: statusStyle.text }]}>
+                      {statusStyle.icon} {statusStyle.label}
+                    </Text>
+                  </View>
+                  <Text style={styles.jobDateText}>{relevantDate}</Text>
                 </View>
               </TouchableOpacity>
             );
@@ -273,22 +303,27 @@ const styles = StyleSheet.create({
   },
   metricsGrid: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 20,
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 24,
   },
   metricCard: {
     flex: 1,
+    minWidth: '28%',
     backgroundColor: '#FFFFFF',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    paddingVertical: 14,
+    paddingVertical: 12,
     alignItems: 'center',
   },
+  metricCardTotal: {
+    backgroundColor: '#F8FAFC',
+    borderColor: '#CBD5E1',
+  },
   metricNumber: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
-    color: '#2563EB',
   },
   metricLabel: {
     fontSize: 11,
@@ -301,20 +336,36 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    padding: 24,
+    padding: 28,
     alignItems: 'center',
   },
+  emptyIcon: {
+    fontSize: 32,
+    marginBottom: 8,
+  },
   emptyTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#475569',
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
     marginBottom: 4,
   },
   emptyText: {
     fontSize: 13,
-    color: '#94A3B8',
+    color: '#64748B',
     textAlign: 'center',
     lineHeight: 18,
+    marginBottom: 16,
+  },
+  emptyActionBtn: {
+    backgroundColor: '#2563EB',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  emptyActionText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#FFFFFF',
   },
   recentJobCard: {
     backgroundColor: '#FFFFFF',
@@ -341,13 +392,22 @@ const styles = StyleSheet.create({
     color: '#64748B',
     marginTop: 2,
   },
+  jobEndCol: {
+    alignItems: 'flex-end',
+    gap: 4,
+  },
   statusPill: {
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
+    borderWidth: 1,
   },
   statusPillText: {
     fontSize: 11,
     fontWeight: '700',
+  },
+  jobDateText: {
+    fontSize: 11,
+    color: '#94A3B8',
   },
 });
