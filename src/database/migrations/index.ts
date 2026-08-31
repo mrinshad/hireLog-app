@@ -9,6 +9,7 @@ import { up as migration006 } from './006_create_email_drafts_table';
 import { up as migration007 } from './007_add_applied_at_and_status_history';
 import { up as migration008 } from './008_add_template_version_to_resume_versions';
 import { up as migration009 } from './009_add_workflow_orchestration_fields';
+import { up as migration010 } from './010_create_api_keys_and_models_tables';
 
 export interface Migration {
   version: number;
@@ -61,6 +62,11 @@ export const MIGRATIONS: Migration[] = [
     version: 9,
     name: '009_add_workflow_orchestration_fields',
     up: migration009,
+  },
+  {
+    version: 10,
+    name: '010_create_api_keys_and_models_tables',
+    up: migration010,
   },
 ];
 

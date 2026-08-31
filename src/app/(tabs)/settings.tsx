@@ -19,67 +19,98 @@ import { Card } from '@/components/common/Card';
 import { PrimaryButton, SecondaryButton } from '@/components/common/Buttons';
 import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
 import { AppDialog, AppToast } from '@/context/DialogContext';
-import { settingsRepository } from '@/database/repositories/settingsRepository';
+import { ApiKeyItem, apiKeyRepository } from '@/database/repositories/apiKeyRepository';
+import { deviceAuthService } from '@/services/auth/deviceAuthService';
 import { profileSeeder } from '@/services/profile/profileSeeder';
 
 export default function SettingsScreen() {
   const router = useRouter();
 
-  const [apiKey, setApiKey] = useState('');
-  const [compilerUrl, setCompilerUrl] = useState('');
-  const [isSecure, setIsSecure] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const [activeKey, setActiveKey] = useState<ApiKeyItem | null>(null);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
 
-  // Password Gate Modal State
-  const [isPasswordModalVisible, setIsPasswordModalVisible] = useState(false);
-  const [passwordInput, setPasswordInput] = useState('');
-  const [passwordError, setPasswordError] = useState<string | null>(null);
+  // Modal Gate State for API Keys (Fallback PIN)
+  const [isApiKeyPinModalVisible, setIsApiKeyPinModalVisible] = useState(false);
+  const [apiKeyPinInput, setApiKeyPinInput] = useState('');
+  const [apiKeyPinError, setApiKeyPinError] = useState<string | null>(null);
+
+  // Profile Password Gate Modal State
+  const [isProfileModalVisible, setIsProfileModalVisible] = useState(false);
+  const [profilePinInput, setProfilePinInput] = useState('');
+  const [profilePinError, setProfilePinError] = useState<string | null>(null);
+
+  const loadSettings = async () => {
+    try {
+      const active = await apiKeyRepository.getActiveApiKey();
+      setActiveKey(active);
+    } catch (error) {
+      console.error('Failed to load active settings:', error);
+    }
+  };
 
   useEffect(() => {
-    async function loadSettings() {
-      try {
-        const storedKey = await settingsRepository.getGeminiApiKey();
-        setApiKey(storedKey);
-
-        const storedCompiler = await settingsRepository.getSetting('latex_compiler_url');
-        setCompilerUrl(storedCompiler || '');
-      } catch (error) {
-        console.error('Failed to load settings:', error);
-      }
-    }
     loadSettings();
   }, []);
 
-  const handleSaveSettings = async () => {
+  /**
+   * Protected entry to API Keys configuration.
+   * Prompts native Android biometrics / device PIN / lock first.
+   */
+  const handleOpenApiKeys = async () => {
     try {
-      setIsSaving(true);
-      await settingsRepository.setGeminiApiKey(apiKey.trim());
-      await settingsRepository.setSetting('latex_compiler_url', compilerUrl.trim());
-      AppToast.show('Settings saved successfully', 'success');
-    } catch (error) {
-      console.error('Failed to save settings:', error);
-      AppDialog.error('Save Failed', 'Unable to update settings. Please check your connection and try again.');
+      setIsAuthenticating(true);
+      const authResult = await deviceAuthService.promptNativeAuth(
+        'Unlock AI & API Keys Configuration'
+      );
+
+      if (authResult.success) {
+        router.push('/settings/api-keys' as any);
+        return;
+      }
+
+      if (authResult.fallbackNeeded) {
+        // Fallback to app PIN gate modal
+        setApiKeyPinInput('');
+        setApiKeyPinError(null);
+        setIsApiKeyPinModalVisible(true);
+      }
+    } catch (err) {
+      console.warn('Auth check error:', err);
+      setApiKeyPinInput('');
+      setApiKeyPinError(null);
+      setIsApiKeyPinModalVisible(true);
     } finally {
-      setIsSaving(false);
+      setIsAuthenticating(false);
     }
   };
 
-  const handleOpenLoadProfile = () => {
-    setPasswordInput('');
-    setPasswordError(null);
-    setIsPasswordModalVisible(true);
-  };
-
-  const handleVerifyPassword = () => {
-    if (!profileSeeder.verifyPassword(passwordInput)) {
-      setPasswordError('Incorrect password');
+  const handleVerifyApiKeyPin = () => {
+    if (!profileSeeder.verifyPassword(apiKeyPinInput)) {
+      setApiKeyPinError('Incorrect PIN / Password');
       return;
     }
 
-    // Password is correct -> close password modal and prompt confirmation
-    setIsPasswordModalVisible(false);
-    setPasswordInput('');
-    setPasswordError(null);
+    setIsApiKeyPinModalVisible(false);
+    setApiKeyPinInput('');
+    setApiKeyPinError(null);
+    router.push('/settings/api-keys' as any);
+  };
+
+  const handleOpenLoadProfile = () => {
+    setProfilePinInput('');
+    setProfilePinError(null);
+    setIsProfileModalVisible(true);
+  };
+
+  const handleVerifyProfilePassword = () => {
+    if (!profileSeeder.verifyPassword(profilePinInput)) {
+      setProfilePinError('Incorrect password');
+      return;
+    }
+
+    setIsProfileModalVisible(false);
+    setProfilePinInput('');
+    setProfilePinError(null);
 
     AppDialog.confirm(
       'Load user details?',
@@ -99,79 +130,63 @@ export default function SettingsScreen() {
     );
   };
 
+  const maskKey = (key?: string) => {
+    if (!key || key.length < 10) return '••••••••••••';
+    return `${key.slice(0, 7)}••••••••${key.slice(-4)}`;
+  };
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <AppHeader title="Settings" subtitle="Preferences & Configuration" />
+        <AppHeader title="Settings" subtitle="Preferences & Security Configuration" />
 
         <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-          {/* Gemini AI API Key Configuration */}
+          {/* Dynamic AI & API Keys Configuration Gate */}
           <Card style={styles.card}>
             <View style={styles.cardHeaderRow}>
-              <Feather name="cpu" size={IconSizes.md} color={Colors.primary} />
-              <Text style={Typography.sectionTitle}>Google Gemini API Key</Text>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={Typography.caption}>API Key</Text>
-              <View style={styles.inputRow}>
-                <TextInput
-                  style={[styles.input, styles.inputFlex]}
-                  placeholder="AIzaSy..."
-                  placeholderTextColor={Colors.textMuted}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  secureTextEntry={isSecure}
-                  value={apiKey}
-                  onChangeText={setApiKey}
-                />
-                <TouchableOpacity
-                  style={styles.toggleBtn}
-                  onPress={() => setIsSecure(!isSecure)}>
-                  <Feather
-                    name={isSecure ? 'eye' : 'eye-off'}
-                    size={IconSizes.sm}
-                    color={Colors.textSecondary}
-                  />
-                </TouchableOpacity>
+              <View style={styles.headerLeftGroup}>
+                <Feather name="cpu" size={IconSizes.md} color={Colors.primary} />
+                <Text style={Typography.sectionTitle}>AI & API Key Configuration</Text>
               </View>
-              <Text style={Typography.caption}>
-                Used to extract job requirements and draft tailored application emails.
-              </Text>
-            </View>
-          </Card>
-
-          {/* LaTeX Compiler Configuration */}
-          <Card style={styles.card}>
-            <View style={styles.cardHeaderRow}>
-              <Feather name="file-text" size={IconSizes.md} color={Colors.primary} />
-              <Text style={Typography.sectionTitle}>LaTeX PDF Compiler</Text>
+              <View style={styles.lockBadge}>
+                <Feather name="lock" size={12} color={Colors.primary} />
+                <Text style={styles.lockBadgeText}>SECURED</Text>
+              </View>
             </View>
 
-            <View style={styles.inputGroup}>
-              <Text style={Typography.caption}>Compiler Service URL</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="https://latexonline.cc/compile (default)"
-                placeholderTextColor={Colors.textMuted}
-                autoCapitalize="none"
-                autoCorrect={false}
-                value={compilerUrl}
-                onChangeText={setCompilerUrl}
-              />
-              <Text style={Typography.caption}>
-                Leave blank to use the built-in compiler service.
-              </Text>
-            </View>
+            <TouchableOpacity
+              style={styles.apiKeyActionCard}
+              activeOpacity={0.7}
+              onPress={handleOpenApiKeys}>
+              <View style={styles.apiKeyInfoLeft}>
+                <Text style={styles.keyHeroLabel}>
+                  {activeKey ? activeKey.label : 'No Active Key Configured'}
+                </Text>
+                <Text style={styles.keyHeroSub}>
+                  {activeKey
+                    ? `${maskKey(activeKey.apiKey)} • ${activeKey.defaultModel}`
+                    : 'Tap to configure Google Gemini API keys & AI models'}
+                </Text>
+              </View>
+              <View style={styles.chevronWrap}>
+                <Feather name="chevron-right" size={20} color={Colors.primary} />
+              </View>
+            </TouchableOpacity>
+
+            <Text style={[Typography.caption, { marginTop: 8 }]}>
+              Protected by Android biometric / screen lock credentials. Configure multiple API keys, assign default models, and register custom models.
+            </Text>
           </Card>
 
           {/* Profile Management / Seeding */}
           <Card style={styles.card}>
             <View style={styles.cardHeaderRow}>
-              <Feather name="user" size={IconSizes.md} color={Colors.primary} />
-              <Text style={Typography.sectionTitle}>Profile Data</Text>
+              <View style={styles.headerLeftGroup}>
+                <Feather name="user" size={IconSizes.md} color={Colors.primary} />
+                <Text style={Typography.sectionTitle}>Profile Data</Text>
+              </View>
             </View>
 
             <TouchableOpacity
@@ -180,75 +195,115 @@ export default function SettingsScreen() {
               onPress={handleOpenLoadProfile}>
               <View style={styles.profileActionTextContainer}>
                 <Text style={Typography.itemTitle}>Load My Profile</Text>
-                <Text style={Typography.caption}>Import the saved profile information</Text>
+                <Text style={Typography.caption}>Import the saved verified candidate information</Text>
               </View>
               <Feather name="download" size={IconSizes.md} color={Colors.primary} />
             </TouchableOpacity>
           </Card>
 
-          {/* Save Button */}
-          <PrimaryButton
-            title="Save Settings"
-            icon="check"
-            loading={isSaving}
-            size="lg"
-            onPress={handleSaveSettings}
-            style={styles.saveBtn}
-          />
-
           {/* Privacy Note */}
           <View style={styles.infoCard}>
             <Feather name="shield" size={IconSizes.sm} color={Colors.primary} />
             <Text style={styles.infoText}>
-              All your profile data, resumes, drafts, and settings remain stored on your device.
+              All your profile data, resumes, drafts, and API keys remain stored locally in your device's SQLite database.
             </Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Lightweight Password Gate Modal */}
+      {/* API Keys Fallback PIN Gate Modal */}
       <Modal
-        visible={isPasswordModalVisible}
+        visible={isApiKeyPinModalVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setIsPasswordModalVisible(false)}>
+        onRequestClose={() => setIsApiKeyPinModalVisible(false)}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={Typography.screenTitle}>Load My Profile</Text>
-              <Text style={[Typography.caption, { marginTop: 2 }]}>Password</Text>
+              <Feather name="lock" size={24} color={Colors.primary} />
+              <Text style={[Typography.screenTitle, { marginTop: 6 }]}>Security Verification</Text>
+              <Text style={[Typography.caption, { marginTop: 2, textAlign: 'center' }]}>
+                Enter PIN / Password to access API keys
+              </Text>
             </View>
 
             <TextInput
-              style={[styles.input, styles.passwordInput, !!passwordError && styles.inputError]}
+              style={[styles.input, styles.passwordInput, !!apiKeyPinError && styles.inputError]}
+              placeholder="PIN / Password"
+              placeholderTextColor={Colors.textMuted}
+              secureTextEntry
+              keyboardType="number-pad"
+              autoFocus
+              value={apiKeyPinInput}
+              onChangeText={(text) => {
+                setApiKeyPinInput(text);
+                if (apiKeyPinError) setApiKeyPinError(null);
+              }}
+              onSubmitEditing={handleVerifyApiKeyPin}
+            />
+
+            {apiKeyPinError ? <Text style={styles.errorText}>{apiKeyPinError}</Text> : null}
+
+            <View style={styles.modalActions}>
+              <SecondaryButton
+                title="Cancel"
+                onPress={() => setIsApiKeyPinModalVisible(false)}
+                style={{ flex: 1 }}
+              />
+              <PrimaryButton
+                title="Unlock"
+                onPress={handleVerifyApiKeyPin}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* Profile Password Gate Modal */}
+      <Modal
+        visible={isProfileModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsProfileModalVisible(false)}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Feather name="user-check" size={24} color={Colors.primary} />
+              <Text style={[Typography.screenTitle, { marginTop: 6 }]}>Load My Profile</Text>
+              <Text style={[Typography.caption, { marginTop: 2 }]}>Security PIN</Text>
+            </View>
+
+            <TextInput
+              style={[styles.input, styles.passwordInput, !!profilePinError && styles.inputError]}
               placeholder="Password"
               placeholderTextColor={Colors.textMuted}
               secureTextEntry
               keyboardType="number-pad"
               autoFocus
-              value={passwordInput}
+              value={profilePinInput}
               onChangeText={(text) => {
-                setPasswordInput(text);
-                if (passwordError) setPasswordError(null);
+                setProfilePinInput(text);
+                if (profilePinError) setProfilePinError(null);
               }}
-              onSubmitEditing={handleVerifyPassword}
+              onSubmitEditing={handleVerifyProfilePassword}
             />
 
-            {passwordError ? (
-              <Text style={styles.errorText}>{passwordError}</Text>
-            ) : null}
+            {profilePinError ? <Text style={styles.errorText}>{profilePinError}</Text> : null}
 
             <View style={styles.modalActions}>
               <SecondaryButton
                 title="Cancel"
-                onPress={() => setIsPasswordModalVisible(false)}
+                onPress={() => setIsProfileModalVisible(false)}
                 style={{ flex: 1 }}
               />
               <PrimaryButton
                 title="Continue"
-                onPress={handleVerifyPassword}
+                onPress={handleVerifyProfilePassword}
                 style={{ flex: 1 }}
               />
             </View>
@@ -271,83 +326,91 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: Spacing.lg,
-    paddingBottom: Spacing.xxxl,
+    padding: Spacing.md,
+    paddingBottom: 40,
     gap: Spacing.md,
   },
   card: {
-    gap: Spacing.md,
+    padding: Spacing.md,
   },
   cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
+    justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
   },
-  inputGroup: {
-    gap: Spacing.xs,
-  },
-  inputRow: {
+  headerLeftGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.xs,
+    gap: Spacing.sm,
   },
-  input: {
-    backgroundColor: Colors.surfaceSubtle,
-    borderWidth: 1,
+  lockBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: Colors.primary + '14',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: Radius.sm,
+  },
+  lockBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: Colors.primary,
+    letterSpacing: 0.5,
+  },
+  apiKeyActionCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.background,
     borderColor: Colors.border,
+    borderWidth: 1,
     borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    fontSize: 14,
-    color: Colors.textPrimary,
+    padding: Spacing.md,
+    marginTop: 4,
   },
-  inputFlex: {
+  apiKeyInfoLeft: {
     flex: 1,
   },
-  inputError: {
-    borderColor: Colors.errorBorder,
+  keyHeroLabel: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.textPrimary,
   },
-  toggleBtn: {
-    backgroundColor: Colors.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: Radius.md,
-    padding: Spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
+  keyHeroSub: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  chevronWrap: {
+    marginLeft: Spacing.sm,
   },
   profileActionRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: Colors.surfaceSubtle,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    marginTop: Spacing.xs,
   },
   profileActionTextContainer: {
     flex: 1,
-    gap: 2,
-  },
-  saveBtn: {
-    marginTop: Spacing.sm,
   },
   infoCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Colors.primaryLight,
-    padding: Spacing.md,
-    borderRadius: Radius.md,
     gap: Spacing.sm,
+    padding: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: Colors.primaryBorder,
+    borderColor: Colors.border,
   },
   infoText: {
+    ...Typography.caption,
     flex: 1,
-    fontSize: 12,
-    color: Colors.primaryDark,
-    lineHeight: 16,
   },
   modalOverlay: {
     flex: 1,
@@ -358,31 +421,46 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     width: '100%',
-    maxWidth: 360,
+    maxWidth: 340,
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
-    padding: Spacing.xl,
-    gap: Spacing.md,
+    padding: Spacing.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
     elevation: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
   },
   modalHeader: {
-    gap: 2,
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  input: {
+    backgroundColor: Colors.background,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    fontSize: 14,
+    color: Colors.textPrimary,
   },
   passwordInput: {
-    marginTop: 4,
+    textAlign: 'center',
+    letterSpacing: 4,
+    fontSize: 18,
+    marginBottom: Spacing.sm,
+  },
+  inputError: {
+    borderColor: Colors.error,
   },
   errorText: {
-    fontSize: 12,
-    color: Colors.errorText,
-    fontWeight: '600',
+    ...Typography.caption,
+    color: Colors.error,
+    textAlign: 'center',
+    marginBottom: Spacing.sm,
   },
   modalActions: {
     flexDirection: 'row',
-    gap: Spacing.md,
-    marginTop: Spacing.xs,
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
   },
 });

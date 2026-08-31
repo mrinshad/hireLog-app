@@ -1,11 +1,13 @@
+import { apiKeyRepository } from '@/database/repositories/apiKeyRepository';
 import { settingsRepository } from '@/database/repositories/settingsRepository';
 
 const DEFAULT_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
+  'gemini-1.5-flash',
+  'gemini-1.5-pro',
   'gemini-3.6-flash',
   'gemini-3.5-flash-lite',
-  'gemini-3.7-flash',
-  'gemini-3.5-flash',
-  'gemini-3.1-pro-preview',
 ];
 
 let cachedActiveModels: string[] | null = null;
@@ -112,24 +114,35 @@ export const geminiClient = {
    * Sends a structured JSON prompt to Gemini with dynamic model discovery and automatic fallback.
    */
   async generateJson<T>(prompt: string, options: GeminiRequestOptions = {}): Promise<T> {
-    const apiKey = await settingsRepository.getGeminiApiKey();
+    const activeKeyItem = await apiKeyRepository.getActiveApiKey();
+    const apiKey = activeKeyItem?.apiKey || (await settingsRepository.getGeminiApiKey());
 
     if (!apiKey) {
       throw new GeminiError(
-        'Gemini API Key is not configured. Please add your API key in Settings.',
+        'Gemini API Key is not configured. Please add your API key in Settings > API Keys.',
         'MISSING_API_KEY'
       );
     }
 
-    const customModel =
+    const preferredModel =
+      options.model ||
+      activeKeyItem?.defaultModel ||
       (await settingsRepository.getSetting('gemini_model')) ||
       process.env.EXPO_PUBLIC_GEMINI_MODEL;
+
+    // Load available models dynamically from database
+    let dbModels: string[] = [];
+    try {
+      const allDbModels = await apiKeyRepository.getAllModels();
+      dbModels = allDbModels.map((m) => m.modelId);
+    } catch {}
 
     let candidateModels: string[];
     if (options.model) {
       candidateModels = [options.model];
-    } else if (customModel && customModel.trim()) {
-      candidateModels = [customModel.trim(), ...DEFAULT_MODELS.filter((m) => m !== customModel.trim())];
+    } else if (preferredModel && preferredModel.trim()) {
+      const allPool = Array.from(new Set([...dbModels, ...DEFAULT_MODELS]));
+      candidateModels = [preferredModel.trim(), ...allPool.filter((m) => m !== preferredModel.trim())];
     } else {
       const discovered = await discoverActiveModels(apiKey);
       candidateModels = discovered.length > 0 ? discovered : DEFAULT_MODELS;
