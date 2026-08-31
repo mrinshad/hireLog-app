@@ -11,10 +11,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
+import * as Sharing from 'expo-sharing';
 
 import { jobRepository } from '@/database/repositories/jobRepository';
 import { profileRepository } from '@/database/repositories/profileRepository';
 import { resumeRepository } from '@/database/repositories/resumeRepository';
+import { CompilerError, latexCompiler } from '@/services/latex/compiler';
 import { latexRenderer } from '@/services/latex/latexRenderer';
 import { ResumeVersion } from '@/services/latex/types';
 import { matchingEngine } from '@/services/matching/matchingEngine';
@@ -32,7 +34,9 @@ export default function ResumePreviewScreen() {
   const [selectedVersion, setSelectedVersion] = useState<ResumeVersion | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generationStep, setGenerationStep] = useState<string>('');
   const [isCopied, setIsCopied] = useState(false);
+  const [showErrorLog, setShowErrorLog] = useState(false);
 
   const loadData = async () => {
     if (!id) return;
@@ -75,36 +79,116 @@ export default function ResumePreviewScreen() {
     loadData();
   }, [id]);
 
-  const handleGenerateLatex = async () => {
+  const handleGenerateResume = async () => {
     if (!job || !customizedResume) return;
 
     try {
       setIsGenerating(true);
+      setShowErrorLog(false);
 
-      // Render LaTeX source from CustomizedResume
+      // Step 1: Render LaTeX source
+      setGenerationStep('Generating LaTeX markup...');
       const latexSource = latexRenderer.render(customizedResume);
 
-      // Save as a new version in SQLite
+      // Step 2: Save initial version in SQLite (Pending status)
+      setGenerationStep('Creating resume record...');
       const newVersion = await resumeRepository.saveResumeVersion(
         job.id,
         customizedResume,
-        latexSource
+        latexSource,
+        null,
+        'Compiling'
       );
 
-      // Refresh version list and select the new one
-      const updatedVersions = await resumeRepository.getResumeVersions(job.id);
-      setVersions(updatedVersions);
-      setSelectedVersion(newVersion);
+      // Step 3: Compile LaTeX to PDF
+      setGenerationStep('Compiling LaTeX to PDF...');
+      try {
+        const compileResult = await latexCompiler.compileToPdf(
+          latexSource,
+          job.id,
+          newVersion.id
+        );
 
-      Alert.alert(
-        'LaTeX Generated',
-        `Resume version v${newVersion.versionNumber} generated successfully and saved locally.`
-      );
-    } catch (error) {
-      console.error('Failed to generate LaTeX:', error);
-      Alert.alert('Error', 'Failed to render LaTeX source.');
+        // Step 4: Update SQLite with PDF path & Generated status
+        setGenerationStep('Saving PDF to device...');
+        await resumeRepository.updateResumePdf(
+          newVersion.id,
+          compileResult.pdfPath,
+          'Generated',
+          null
+        );
+
+        newVersion.pdfPath = compileResult.pdfPath;
+        newVersion.generationStatus = 'Generated';
+
+        // Refresh versions list
+        const updatedVersions = await resumeRepository.getResumeVersions(job.id);
+        setVersions(updatedVersions);
+        setSelectedVersion(newVersion);
+
+        Alert.alert(
+          'Resume Generated',
+          `PDF Resume (v${newVersion.versionNumber}) is compiled and saved locally!`
+        );
+      } catch (compileErr: any) {
+        console.error('PDF compilation failed:', compileErr);
+        const errorLog =
+          compileErr instanceof CompilerError
+            ? compileErr.compilerLog
+            : String(compileErr);
+
+        await resumeRepository.updateResumePdf(
+          newVersion.id,
+          null,
+          'Failed',
+          errorLog
+        );
+
+        newVersion.generationStatus = 'Failed';
+        newVersion.errorLog = errorLog;
+
+        const updatedVersions = await resumeRepository.getResumeVersions(job.id);
+        setVersions(updatedVersions);
+        setSelectedVersion(newVersion);
+
+        Alert.alert(
+          'Compilation Failed',
+          compileErr.message || 'Failed to compile LaTeX to PDF.'
+        );
+      }
+    } catch (error: any) {
+      console.error('Resume generation error:', error);
+      Alert.alert('Error', error.message || 'Failed to generate resume.');
     } finally {
       setIsGenerating(false);
+      setGenerationStep('');
+    }
+  };
+
+  const handleOpenPdf = async () => {
+    if (!selectedVersion?.pdfPath) {
+      Alert.alert('PDF Not Available', 'PDF file has not been compiled yet.');
+      return;
+    }
+
+    try {
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (!isAvailable) {
+        Alert.alert(
+          'Sharing Unavailable',
+          'Document viewing is not available on this platform.'
+        );
+        return;
+      }
+
+      await Sharing.shareAsync(selectedVersion.pdfPath, {
+        mimeType: 'application/pdf',
+        dialogTitle: `Resume - ${selectedVersion.targetRole}`,
+        UTI: 'com.adobe.pdf',
+      });
+    } catch (error: any) {
+      console.error('Error opening PDF:', error);
+      Alert.alert('Error', 'Failed to open PDF file.');
     }
   };
 
@@ -162,7 +246,7 @@ export default function ResumePreviewScreen() {
           <Text style={styles.backText}>← Customize</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle} numberOfLines={1}>
-          LaTeX Resume Engine
+          PDF Resume Preview
         </Text>
         <View style={{ width: 40 }} />
       </View>
@@ -180,30 +264,36 @@ export default function ResumePreviewScreen() {
             </View>
           </View>
           <Text style={styles.heroSubtext}>
-            ATS-compliant LaTeX source generated dynamically from your verified Profile.
+            ATS-compliant PDF resume generated directly from your verified Profile.
           </Text>
         </View>
 
         {/* Version History Selector */}
         {versions.length > 0 && (
           <View style={styles.card}>
-            <Text style={styles.sectionTitle}>📑 Generated Versions ({versions.length})</Text>
+            <Text style={styles.sectionTitle}>📑 Resume Versions ({versions.length})</Text>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.versionChipsRow}>
               {versions.map((ver) => {
                 const isSelected = selectedVersion?.id === ver.id;
+                const isSuccess = ver.generationStatus === 'Generated' && ver.pdfPath;
                 return (
                   <TouchableOpacity
                     key={ver.id}
-                    style={[styles.versionChip, isSelected && styles.versionChipSelected]}
+                    style={[
+                      styles.versionChip,
+                      isSelected && styles.versionChipSelected,
+                      ver.generationStatus === 'Failed' && styles.versionChipFailed,
+                    ]}
                     onPress={() => setSelectedVersion(ver)}>
                     <Text
                       style={[
                         styles.versionChipText,
                         isSelected && styles.versionChipTextSelected,
                       ]}>
+                      {isSuccess ? '✓ ' : ver.generationStatus === 'Failed' ? '✕ ' : ''}
                       v{ver.versionNumber} •{' '}
                       {new Date(ver.createdAt).toLocaleDateString(undefined, {
                         month: 'short',
@@ -217,28 +307,88 @@ export default function ResumePreviewScreen() {
           </View>
         )}
 
-        {/* Action: Generate / Regenerate LaTeX */}
+        {/* Active PDF Status & Actions */}
+        {selectedVersion?.generationStatus === 'Generated' && selectedVersion.pdfPath ? (
+          <View style={styles.readyCard}>
+            <View style={styles.readyHeaderRow}>
+              <View style={styles.readyTitleArea}>
+                <Text style={styles.readyTitle}>✓ PDF Resume Ready</Text>
+                <Text style={styles.readySubtext}>
+                  Version v{selectedVersion.versionNumber} saved to on-device storage.
+                </Text>
+              </View>
+              <View style={styles.pdfBadge}>
+                <Text style={styles.pdfBadgeText}>PDF</Text>
+              </View>
+            </View>
+
+            <View style={styles.primaryActionRow}>
+              <TouchableOpacity
+                style={styles.openPdfBtn}
+                activeOpacity={0.8}
+                onPress={handleOpenPdf}>
+                <Text style={styles.openPdfBtnText}>👁️ Preview / Open PDF</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.sharePdfBtn}
+                activeOpacity={0.8}
+                onPress={handleOpenPdf}>
+                <Text style={styles.sharePdfBtnText}>📤 Share</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        ) : selectedVersion?.generationStatus === 'Failed' ? (
+          <View style={styles.failedCard}>
+            <Text style={styles.failedTitle}>✕ PDF Generation Failed</Text>
+            <Text style={styles.failedSubtext}>
+              The LaTeX compiler encountered an issue. You can review the error log below or try again.
+            </Text>
+            {selectedVersion.errorLog && (
+              <TouchableOpacity
+                style={styles.toggleLogBtn}
+                onPress={() => setShowErrorLog(!showErrorLog)}>
+                <Text style={styles.toggleLogText}>
+                  {showErrorLog ? '▲ Hide Compiler Logs' : '▼ View Compiler Error Logs'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            {showErrorLog && selectedVersion.errorLog ? (
+              <View style={styles.errorLogBox}>
+                <Text style={styles.errorLogText}>{selectedVersion.errorLog}</Text>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+
+        {/* Action: Generate / Regenerate PDF Resume */}
         <View style={styles.actionCard}>
           <Text style={styles.actionCardTitle}>
-            {selectedVersion ? '⚡ Regenerate or Update' : '🚀 Ready to Generate'}
+            {selectedVersion ? '⚡ Regenerate or Update' : '🚀 Ready to Generate PDF'}
           </Text>
           <Text style={styles.actionCardSubtext}>
             {selectedVersion
               ? 'Regenerating will compile the latest Profile details into a new version without overwriting existing ones.'
-              : 'Compile your selected skills, experience, and projects into clean LaTeX source.'}
+              : 'Compile your selected skills, experience, and projects into a professional PDF document.'}
           </Text>
-          <TouchableOpacity
-            style={[styles.generateBtn, isGenerating && styles.btnDisabled]}
-            disabled={isGenerating}
-            onPress={handleGenerateLatex}>
-            <Text style={styles.generateBtnText}>
-              {isGenerating
-                ? 'Compiling LaTeX...'
-                : selectedVersion
-                ? '↻ Generate New LaTeX Version'
-                : '✨ Generate LaTeX Source'}
-            </Text>
-          </TouchableOpacity>
+
+          {isGenerating ? (
+            <View style={styles.generatingBox}>
+              <ActivityIndicator size="small" color="#2563EB" />
+              <Text style={styles.generatingText}>{generationStep || 'Compiling resume...'}</Text>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.generateBtn}
+              activeOpacity={0.8}
+              onPress={handleGenerateResume}>
+              <Text style={styles.generateBtnText}>
+                {selectedVersion
+                  ? '↻ Generate New Version'
+                  : '✨ Generate PDF Resume'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* LaTeX Source Viewer */}
@@ -254,7 +404,6 @@ export default function ResumePreviewScreen() {
                   {new Date(selectedVersion.createdAt).toLocaleTimeString(undefined, {
                     hour: '2-digit',
                     minute: '2-digit',
-                    second: '2-digit',
                   })}
                 </Text>
               </View>
@@ -315,11 +464,11 @@ export default function ResumePreviewScreen() {
           </View>
         )}
 
-        {/* PDF compilation notice */}
+        {/* Local Storage & Sharing Notice */}
         <View style={styles.infoCard}>
-          <Text style={styles.infoTitle}>ℹ️ Next Step: PDF Compilation</Text>
+          <Text style={styles.infoTitle}>🔒 Persistent Local Storage</Text>
           <Text style={styles.infoText}>
-            LaTeX source code is generated and saved in your SQLite database. The subsequent module will compile this code into a downloadable PDF resume.
+            Generated PDF resumes and LaTeX source code are stored permanently on your device in SQLite and the file system. They remain accessible even after restarting the app.
           </Text>
         </View>
       </ScrollView>
@@ -481,6 +630,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#2563EB',
     borderColor: '#2563EB',
   },
+  versionChipFailed: {
+    borderColor: '#FCA5A5',
+    backgroundColor: '#FEF2F2',
+  },
   versionChipText: {
     fontSize: 12,
     fontWeight: '600',
@@ -488,6 +641,118 @@ const styles = StyleSheet.create({
   },
   versionChipTextSelected: {
     color: '#FFFFFF',
+  },
+  readyCard: {
+    backgroundColor: '#F0FDF4',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    padding: 16,
+    marginBottom: 16,
+  },
+  readyHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  readyTitleArea: {
+    flex: 1,
+    marginRight: 10,
+  },
+  readyTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  readySubtext: {
+    fontSize: 12,
+    color: '#15803D',
+    marginTop: 2,
+  },
+  pdfBadge: {
+    backgroundColor: '#DCFCE7',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  pdfBadgeText: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#166534',
+  },
+  primaryActionRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  openPdfBtn: {
+    flex: 2,
+    backgroundColor: '#16A34A',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  openPdfBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  sharePdfBtn: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  sharePdfBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  failedCard: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    padding: 16,
+    marginBottom: 16,
+  },
+  failedTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#DC2626',
+    marginBottom: 4,
+  },
+  failedSubtext: {
+    fontSize: 12,
+    color: '#991B1B',
+    lineHeight: 17,
+    marginBottom: 10,
+  },
+  toggleLogBtn: {
+    paddingVertical: 4,
+    marginBottom: 8,
+  },
+  toggleLogText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#DC2626',
+  },
+  errorLogBox: {
+    backgroundColor: '#0F172A',
+    borderRadius: 8,
+    padding: 10,
+    maxHeight: 180,
+  },
+  errorLogText: {
+    color: '#F87171',
+    fontFamily: 'monospace',
+    fontSize: 11,
+    lineHeight: 15,
   },
   actionCard: {
     backgroundColor: '#FFFFFF',
@@ -509,14 +774,25 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginBottom: 12,
   },
+  generatingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    backgroundColor: '#EFF6FF',
+    borderRadius: 10,
+    paddingVertical: 14,
+  },
+  generatingText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
   generateBtn: {
     backgroundColor: '#2563EB',
     borderRadius: 10,
-    paddingVertical: 12,
+    paddingVertical: 13,
     alignItems: 'center',
-  },
-  btnDisabled: {
-    opacity: 0.6,
   },
   generateBtnText: {
     fontSize: 14,
@@ -558,7 +834,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F172A',
     borderRadius: 10,
     padding: 12,
-    maxHeight: 340,
+    maxHeight: 280,
   },
   codeScroll: {
     flexGrow: 0,

@@ -16,6 +16,7 @@ import { settingsRepository } from '@/database/repositories/settingsRepository';
 
 export default function SettingsScreen() {
   const [apiKey, setApiKey] = useState('');
+  const [compilerUrl, setCompilerUrl] = useState('');
   const [isSecure, setIsSecure] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -25,6 +26,9 @@ export default function SettingsScreen() {
       try {
         const storedKey = await settingsRepository.getGeminiApiKey();
         setApiKey(storedKey);
+
+        const storedCompiler = await settingsRepository.getSetting('latex_compiler_url');
+        setCompilerUrl(storedCompiler || '');
       } catch (error) {
         console.error('Failed to load settings:', error);
       }
@@ -32,16 +36,17 @@ export default function SettingsScreen() {
     loadSettings();
   }, []);
 
-  const handleSaveApiKey = async () => {
+  const handleSaveSettings = async () => {
     try {
       setIsSaving(true);
       await settingsRepository.setGeminiApiKey(apiKey);
+      await settingsRepository.setSetting('latex_compiler_url', compilerUrl.trim());
       setIsSaved(true);
       setTimeout(() => setIsSaved(false), 3000);
-      Alert.alert('Saved', 'Gemini API key has been saved securely to local storage.');
+      Alert.alert('Saved', 'Settings have been saved securely to local storage.');
     } catch (error) {
-      console.error('Failed to save API key:', error);
-      Alert.alert('Error', 'Failed to save API key.');
+      console.error('Failed to save settings:', error);
+      Alert.alert('Error', 'Failed to save settings.');
     } finally {
       setIsSaving(false);
     }
@@ -55,7 +60,7 @@ export default function SettingsScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Settings</Text>
-          <Text style={styles.subtitle}>App preferences and AI configuration</Text>
+          <Text style={styles.subtitle}>App preferences and compiler configuration</Text>
         </View>
 
         <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
@@ -109,25 +114,60 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               </View>
               <Text style={styles.hint}>
-                Your key is stored locally in your on-device SQLite database and never sent to external servers other than the official Google Gemini API.
+                Stored securely on-device and only sent directly to Google Gemini API.
               </Text>
             </View>
-
-            <TouchableOpacity
-              style={[styles.saveBtn, isSaving && styles.saveBtnDisabled]}
-              onPress={handleSaveApiKey}
-              disabled={isSaving}>
-              <Text style={styles.saveBtnText}>
-                {isSaving ? 'Saving...' : isSaved ? '✓ Saved' : 'Save API Key'}
-              </Text>
-            </TouchableOpacity>
           </View>
+
+          {/* LaTeX Compiler Configuration */}
+          <View style={styles.card}>
+            <View style={styles.cardHeaderRow}>
+              <View style={styles.iconCircle}>
+                <Text style={styles.icon}>📄</Text>
+              </View>
+              <View style={styles.cardTitleArea}>
+                <Text style={styles.cardTitle}>LaTeX Compiler Service</Text>
+                <Text style={styles.cardSubtext}>
+                  Compiles generated .tex resumes into PDF documents.
+                </Text>
+              </View>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <Text style={styles.label}>Compiler Service URL (Optional)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="https://latexonline.cc/compile (default)"
+                placeholderTextColor="#94A3B8"
+                autoCapitalize="none"
+                autoCorrect={false}
+                value={compilerUrl}
+                onChangeText={(text) => {
+                  setCompilerUrl(text);
+                  setIsSaved(false);
+                }}
+              />
+              <Text style={styles.hint}>
+                Leave blank to use the default LaTeX compilation service or enter your local/private compiler endpoint (e.g. http://localhost:3000/compile).
+              </Text>
+            </View>
+          </View>
+
+          {/* Save Action */}
+          <TouchableOpacity
+            style={[styles.saveBtn, isSaving && styles.saveBtnDisabled]}
+            onPress={handleSaveSettings}
+            disabled={isSaving}>
+            <Text style={styles.saveBtnText}>
+              {isSaving ? 'Saving...' : isSaved ? '✓ Saved' : 'Save Settings'}
+            </Text>
+          </TouchableOpacity>
 
           {/* Privacy & Truth Notice */}
           <View style={styles.infoCard}>
-            <Text style={styles.infoTitle}>🔒 Privacy & Data Truth Principle</Text>
+            <Text style={styles.infoTitle}>🔒 Local Storage & Privacy Principle</Text>
             <Text style={styles.infoText}>
-              HireLog only uses Gemini for language parsing of raw Job Descriptions. Gemini is never used to fabricate personal details or invent unverified experience.
+              HireLog preserves your verified Profile as the immutable single source of truth. All generated resumes and PDFs remain stored locally on your device.
             </Text>
           </View>
 
@@ -250,7 +290,7 @@ const styles = StyleSheet.create({
     color: '#D97706',
   },
   inputGroup: {
-    marginBottom: 14,
+    marginBottom: 10,
   },
   label: {
     fontSize: 13,
@@ -298,8 +338,9 @@ const styles = StyleSheet.create({
   saveBtn: {
     backgroundColor: '#2563EB',
     borderRadius: 10,
-    paddingVertical: 12,
+    paddingVertical: 14,
     alignItems: 'center',
+    marginBottom: 20,
   },
   saveBtnDisabled: {
     opacity: 0.6,

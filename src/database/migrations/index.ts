@@ -4,6 +4,7 @@ import { up as migration001 } from './001_create_profile_tables';
 import { up as migration002 } from './002_create_jobs_table';
 import { up as migration003 } from './003_add_job_analysis_and_settings';
 import { up as migration004 } from './004_create_resume_versions_table';
+import { up as migration005 } from './005_add_pdf_to_resume_versions';
 
 export interface Migration {
   version: number;
@@ -31,6 +32,11 @@ export const MIGRATIONS: Migration[] = [
     version: 4,
     name: '004_create_resume_versions_table',
     up: migration004,
+  },
+  {
+    version: 5,
+    name: '005_add_pdf_to_resume_versions',
+    up: migration005,
   },
 ];
 

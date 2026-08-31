@@ -8,6 +8,12 @@ export type ResumeSectionId =
   | 'education'
   | 'certifications';
 
+export type ResumeGenerationStatus =
+  | 'Pending'
+  | 'Compiling'
+  | 'Generated'
+  | 'Failed';
+
 export interface TemplateConfig {
   sectionOrder: ResumeSectionId[];
   showSummary: boolean;
@@ -53,6 +59,9 @@ export interface ResumeVersion {
   targetCompany: string;
   latexSource: string;
   resumeJson: string;
+  pdfPath?: string | null;
+  generationStatus: ResumeGenerationStatus;
+  errorLog?: string | null;
   createdAt: string;
   updatedAt: string;
 }
