@@ -165,24 +165,24 @@ export const latexCompiler = {
   },
 
   /**
-   * Compiles using LaTeXOnline.cc.
+   * Compiles using LaTeX Online service safely without URI length overflow.
    */
   async compileLatexOnline(latexSource: string): Promise<ArrayBuffer> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 25000);
+    const timer = setTimeout(() => controller.abort(), 20000);
 
     try {
-      const endpoint = `https://latexonline.cc/compile?text=${encodeURIComponent(latexSource)}`;
-      const res = await fetch(endpoint, {
-        method: 'GET',
+      const res = await fetch('https://latexonline.cc/compile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `text=${encodeURIComponent(latexSource)}`,
         signal: controller.signal,
       });
 
       clearTimeout(timer);
 
       if (!res.ok) {
-        const errorText = await res.text().catch(() => '');
-        throw new Error(`LaTeXOnline returned HTTP ${res.status}: ${errorText.slice(0, 200)}`);
+        throw new Error(`LaTeXOnline returned HTTP ${res.status}`);
       }
 
       return await res.arrayBuffer();

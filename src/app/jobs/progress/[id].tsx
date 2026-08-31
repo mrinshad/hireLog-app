@@ -49,20 +49,25 @@ export default function ApplicationProgressScreen() {
       setJob(jobData);
 
       const initialCompleted: any[] = [];
-      if (jobData?.analysis && jobData.analysisStatus === 'Analyzed') {
+      const hasAnalysis = Boolean(
+        jobData?.analysis || jobData?.analysisStatus === 'Analyzed' || jobData?.matchResult
+      );
+      if (hasAnalysis) {
         initialCompleted.push('ANALYZING_JD');
       }
       if (jobData?.matchResult) {
         initialCompleted.push('MATCHING_PROFILE');
       }
 
+      const initialStep = initialCompleted.includes('MATCHING_PROFILE')
+        ? 'GENERATING_RESUME'
+        : initialCompleted.includes('ANALYZING_JD')
+        ? 'MATCHING_PROFILE'
+        : 'ANALYZING_JD';
+
       setProgress({
         jobId: id,
-        currentStep: initialCompleted.includes('MATCHING_PROFILE')
-          ? 'GENERATING_RESUME'
-          : initialCompleted.includes('ANALYZING_JD')
-          ? 'MATCHING_PROFILE'
-          : 'ANALYZING_JD',
+        currentStep: initialStep,
         stepTitle: 'Preparing application...',
         stepIndex: initialCompleted.length + 1,
         totalSteps: 4,
@@ -99,6 +104,27 @@ export default function ApplicationProgressScreen() {
     setErrorMessage(null);
     setIsProcessing(true);
     try {
+      const jobData = await jobRepository.getJob(id);
+      const initialCompleted: any[] = [];
+      if (jobData?.analysis || jobData?.analysisStatus === 'Analyzed' || jobData?.matchResult) {
+        initialCompleted.push('ANALYZING_JD');
+      }
+      if (jobData?.matchResult) {
+        initialCompleted.push('MATCHING_PROFILE');
+      }
+
+      setProgress({
+        jobId: id,
+        currentStep: initialCompleted.includes('MATCHING_PROFILE')
+          ? 'GENERATING_RESUME'
+          : 'MATCHING_PROFILE',
+        stepTitle: 'Retrying pipeline...',
+        stepIndex: initialCompleted.length + 1,
+        totalSteps: 4,
+        completedSteps: initialCompleted,
+        isError: false,
+      });
+
       const result = await workflowOrchestrator.retryWorkflow(id, (p) => {
         setProgress(p);
       });
@@ -141,16 +167,8 @@ export default function ApplicationProgressScreen() {
 
           <View style={styles.stepsList}>
             {PIPELINE_STEPS.map((step, idx) => {
-              const isCompleted =
-                (progress?.completedSteps || []).includes(step.id as any) ||
-                (step.id === 'PDF_COMPILATION' &&
-                  (progress?.completedSteps || []).includes('GENERATING_RESUME'));
-
-              const isCurrent =
-                isProcessing &&
-                !isCompleted &&
-                (progress?.currentStep === step.id ||
-                  (step.id === 'PDF_COMPILATION' && progress?.currentStep === 'GENERATING_RESUME'));
+              const isCompleted = (progress?.completedSteps || []).includes(step.id as any);
+              const isCurrent = isProcessing && !isCompleted && progress?.currentStep === step.id;
 
               return (
                 <View key={step.id} style={styles.stepRow}>

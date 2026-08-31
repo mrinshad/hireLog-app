@@ -202,15 +202,13 @@ export default function ResumeDetailsScreen() {
 
           {/* Action Row */}
           <View style={styles.actionRow}>
-            {isSuccess && (
-              <PrimaryButton
-                title="Open With"
-                icon="external-link"
-                size="md"
-                onPress={handleOpenWith}
-                style={{ flex: 1 }}
-              />
-            )}
+            <PrimaryButton
+              title="Open With"
+              icon="external-link"
+              size="md"
+              onPress={handleOpenWith}
+              style={{ flex: 1 }}
+            />
             <SecondaryButton
               title={showLatexCode ? 'Hide LaTeX' : 'View LaTeX'}
               icon="code"
@@ -219,6 +217,38 @@ export default function ResumeDetailsScreen() {
               style={{ flex: 1 }}
             />
           </View>
+
+          {/* LaTeX Source Inspector (Action-Adjacent) */}
+          {showLatexCode && (
+            <View style={[styles.codeCardContainer, { marginTop: Spacing.md }]}>
+              <View style={styles.latexHeaderRow}>
+                <Text style={Typography.itemTitle}>LaTeX Source</Text>
+                <TouchableOpacity
+                  style={[styles.copyBtn, isCopied && styles.copyBtnSuccess]}
+                  onPress={handleCopyLatex}>
+                  <Feather
+                    name={isCopied ? 'check' : 'copy'}
+                    size={12}
+                    color={isCopied ? Colors.successText : Colors.textSecondary}
+                  />
+                  <Text style={[styles.copyBtnText, isCopied && styles.copyBtnTextSuccess]}>
+                    {isCopied ? 'Copied' : 'Copy'}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.codeBox}>
+                <ScrollView
+                  nestedScrollEnabled
+                  style={styles.codeScroll}
+                  contentContainerStyle={styles.codeScrollContent}>
+                  <Text style={styles.codeText} selectable>
+                    {resumeVersion.latexSource}
+                  </Text>
+                </ScrollView>
+              </View>
+            </View>
+          )}
         </Card>
 
         {/* =========================================================================
@@ -250,38 +280,6 @@ export default function ResumeDetailsScreen() {
                 size="sm"
                 onPress={() => router.push(`/jobs/${resumeVersion.jobId}`)}
               />
-            </View>
-          </Card>
-        )}
-
-        {/* LaTeX Source Inspector (Collapsible) */}
-        {showLatexCode && (
-          <Card style={styles.card}>
-            <View style={styles.latexHeaderRow}>
-              <Text style={Typography.sectionTitle}>LaTeX Source</Text>
-              <TouchableOpacity
-                style={[styles.copyBtn, isCopied && styles.copyBtnSuccess]}
-                onPress={handleCopyLatex}>
-                <Feather
-                  name={isCopied ? 'check' : 'copy'}
-                  size={12}
-                  color={isCopied ? Colors.successText : Colors.textSecondary}
-                />
-                <Text style={[styles.copyBtnText, isCopied && styles.copyBtnTextSuccess]}>
-                  {isCopied ? 'Copied' : 'Copy'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.codeBox}>
-              <ScrollView
-                nestedScrollEnabled
-                style={styles.codeScroll}
-                contentContainerStyle={styles.codeScrollContent}>
-                <Text style={styles.codeText} selectable>
-                  {resumeVersion.latexSource}
-                </Text>
-              </ScrollView>
             </View>
           </Card>
         )}
@@ -409,6 +407,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.md,
+  },
+  codeCardContainer: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: Spacing.md,
   },
   latexHeaderRow: {
     flexDirection: 'row',

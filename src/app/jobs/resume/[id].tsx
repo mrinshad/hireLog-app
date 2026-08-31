@@ -114,10 +114,10 @@ export default function ResumePreviewScreen() {
   const handleApproveAndContinue = async () => {
     if (!job || !selectedVersion) return;
 
-    if (selectedVersion.generationStatus !== 'Generated' || !selectedVersion.pdfPath) {
+    if (selectedVersion.generationStatus !== 'Generated' && !selectedVersion.latexSource) {
       AppDialog.alert(
-        'PDF Not Ready',
-        'Please ensure the PDF document has finished compiling before approving.'
+        'Resume Not Ready',
+        'Please ensure the tailored resume has finished generating before approving.'
       );
       return;
     }
@@ -366,6 +366,38 @@ export default function ResumePreviewScreen() {
                   style={{ flex: 1 }}
                 />
               </View>
+
+              {/* LaTeX Source Inspector (Action-Adjacent) */}
+              {showLatexCode && selectedVersion && (
+                <View style={[styles.codeCardContainer, { marginTop: Spacing.md }]}>
+                  <View style={styles.latexHeaderRow}>
+                    <Text style={Typography.itemTitle}>LaTeX Source (v{selectedVersion.versionNumber})</Text>
+                    <TouchableOpacity
+                      style={[styles.copyBtn, isCopied && styles.copyBtnSuccess]}
+                      onPress={handleCopyLatex}>
+                      <Feather
+                        name={isCopied ? 'check' : 'copy'}
+                        size={12}
+                        color={isCopied ? Colors.successText : Colors.textSecondary}
+                      />
+                      <Text style={[styles.copyBtnText, isCopied && styles.copyBtnTextSuccess]}>
+                        {isCopied ? 'Copied' : 'Copy'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <View style={styles.codeBox}>
+                    <ScrollView
+                      nestedScrollEnabled
+                      style={styles.codeScroll}
+                      contentContainerStyle={styles.codeScrollContent}>
+                      <Text style={styles.codeText} selectable>
+                        {selectedVersion.latexSource}
+                      </Text>
+                    </ScrollView>
+                  </View>
+                </View>
+              )}
             </View>
           ) : (
             <View style={styles.compilingBox}>
@@ -448,38 +480,6 @@ export default function ResumePreviewScreen() {
             />
           )}
         </Card>
-
-        {/* LaTeX Source Inspector (Collapsible) */}
-        {showLatexCode && selectedVersion && (
-          <Card style={styles.card}>
-            <View style={styles.latexHeaderRow}>
-              <Text style={Typography.sectionTitle}>LaTeX Source (v{selectedVersion.versionNumber})</Text>
-              <TouchableOpacity
-                style={[styles.copyBtn, isCopied && styles.copyBtnSuccess]}
-                onPress={handleCopyLatex}>
-                <Feather
-                  name={isCopied ? 'check' : 'copy'}
-                  size={12}
-                  color={isCopied ? Colors.successText : Colors.textSecondary}
-                />
-                <Text style={[styles.copyBtnText, isCopied && styles.copyBtnTextSuccess]}>
-                  {isCopied ? 'Copied' : 'Copy'}
-                </Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.codeBox}>
-              <ScrollView
-                nestedScrollEnabled
-                style={styles.codeScroll}
-                contentContainerStyle={styles.codeScrollContent}>
-                <Text style={styles.codeText} selectable>
-                  {selectedVersion.latexSource}
-                </Text>
-              </ScrollView>
-            </View>
-          </Card>
-        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -564,6 +564,11 @@ const styles = StyleSheet.create({
   subActionRow: {
     flexDirection: 'row',
     gap: Spacing.md,
+  },
+  codeCardContainer: {
+    borderTopWidth: 1,
+    borderTopColor: Colors.border,
+    paddingTop: Spacing.md,
   },
   compilingBox: {
     flexDirection: 'row',

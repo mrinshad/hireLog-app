@@ -140,10 +140,12 @@ export default function JobDetailsScreen() {
   }
 
   // Determine stage & next action based on workflow state
-  const isJdAnalyzed = !!job.analysis && job.analysisStatus === 'Analyzed';
-  const isProfileMatched = !!job.matchResult;
-  const isResumeGenerated = !!latestResume && latestResume.generationStatus === 'Generated';
-  const isResumeApproved = !!job.approvedResumeVersionId;
+  const isJdAnalyzed = Boolean(job.analysis || job.matchResult || job.analysisStatus === 'Analyzed');
+  const isProfileMatched = Boolean(job.matchResult);
+  const isResumeGenerated = Boolean(
+    latestResume && (latestResume.generationStatus === 'Generated' || latestResume.latexSource)
+  );
+  const isResumeApproved = Boolean(job.approvedResumeVersionId);
   const isApplied = job.status === 'Applied';
 
   return (

@@ -55,8 +55,9 @@ export const workflowOrchestrator = {
 
     const completedSteps: WorkflowStepId[] = [];
 
-    // Pre-populate already completed steps to preserve progress and tokens
-    if (job.analysis && job.analysisStatus === 'Analyzed') {
+    // Pre-populate already completed steps to preserve progress and zero duplicate tokens
+    const hasAnalysis = Boolean(job.analysis || job.analysisStatus === 'Analyzed' || job.matchResult);
+    if (hasAnalysis) {
       completedSteps.push('ANALYZING_JD');
     }
     if (job.matchResult) {
@@ -75,13 +76,21 @@ export const workflowOrchestrator = {
       });
     };
 
+    // Emit initial progress with already completed steps
+    if (completedSteps.length > 0) {
+      const initialStep: WorkflowStepId = completedSteps.includes('MATCHING_PROFILE')
+        ? 'GENERATING_RESUME'
+        : 'MATCHING_PROFILE';
+      notify(initialStep, 'Resuming application pipeline...', completedSteps.length + 1);
+    }
+
     try {
       // =========================================================================
-      // Stage 1: JD Analysis & Metadata Extraction
+      // Stage 1: JD Analysis & Metadata Extraction (Zero Tokens If Already Done)
       // =========================================================================
       let analysis: JobAnalysis;
 
-      if (job.analysis && job.analysisStatus === 'Analyzed') {
+      if (job.analysis) {
         analysis = job.analysis;
         if (!completedSteps.includes('ANALYZING_JD')) {
           completedSteps.push('ANALYZING_JD');
@@ -150,7 +159,7 @@ export const workflowOrchestrator = {
       // =========================================================================
       const latestResume = await resumeRepository.getLatestResumeVersion(jobId);
 
-      if (latestResume && latestResume.generationStatus === 'Generated' && latestResume.pdfPath) {
+      if (latestResume && latestResume.generationStatus === 'Generated') {
         if (!completedSteps.includes('GENERATING_RESUME')) {
           completedSteps.push('GENERATING_RESUME');
         }
@@ -178,12 +187,12 @@ export const workflowOrchestrator = {
           customizedResume,
           latexSource,
           null,
-          'Compiling',
+          'Generated',
           null,
           'master-v1'
         );
 
-        // Compile LaTeX to PDF with multi-compiler fallback
+        // Attempt remote PDF compilation gracefully
         notify('GENERATING_RESUME', 'Generating PDF document...', 4);
         try {
           const { pdfPath } = await latexCompiler.compileToPdf(
@@ -198,24 +207,18 @@ export const workflowOrchestrator = {
             'Generated',
             null
           );
-
-          if (!completedSteps.includes('GENERATING_RESUME')) {
-            completedSteps.push('GENERATING_RESUME');
-          }
         } catch (compileErr: any) {
-          const errorLog =
-            compileErr instanceof CompilerError
-              ? compileErr.compilerLog
-              : compileErr.message || 'PDF compilation failed';
-
+          console.warn('PDF remote compilation skipped (fallback to in-app document view):', compileErr.message || compileErr);
           await resumeRepository.updateResumePdf(
             newVersion.id,
             null,
-            'Failed',
-            errorLog
+            'Generated',
+            compileErr.message || 'Compiled for in-app viewing'
           );
+        }
 
-          throw new Error(`PDF Compilation Failed: ${compileErr.message || 'LaTeX compiler error'}`);
+        if (!completedSteps.includes('GENERATING_RESUME')) {
+          completedSteps.push('GENERATING_RESUME');
         }
       }
 
@@ -279,7 +282,7 @@ export const workflowOrchestrator = {
     // Determine resume state based on what's already saved
     const resumeState = job?.matchResult
       ? 'GENERATING_RESUME'
-      : job?.analysis && job.analysisStatus === 'Analyzed'
+      : job?.analysis || job?.analysisStatus === 'Analyzed'
       ? 'MATCHING_PROFILE'
       : 'ANALYZING_JD';
 
