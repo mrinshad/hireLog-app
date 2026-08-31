@@ -23,6 +23,7 @@ import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/them
 import { AppDialog, AppToast } from '@/context/DialogContext';
 import { resumeRepository } from '@/database/repositories/resumeRepository';
 import { latexCompiler } from '@/services/latex/compiler';
+import { localPdfGenerator } from '@/services/pdf/pdfGenerator';
 import { ResumeVersion } from '@/services/latex/types';
 import { formatRelativeDate } from '@/services/tracking/trackingHelpers';
 import { JobStatus } from '@/types/job';
@@ -85,22 +86,35 @@ export default function ResumeDetailsScreen() {
         }
       }
 
-      // If PDF file does not exist on disk, compile it on-demand from LaTeX source
+      // If PDF file does not exist on disk, generate it on-demand
       if (!targetPath) {
-        if (!resumeVersion.latexSource || !resumeVersion.latexSource.trim()) {
-          AppDialog.alert(
-            'LaTeX Source Missing',
-            'Cannot generate PDF because LaTeX source code is not available.'
-          );
-          return;
+        AppToast.show('Generating PDF document...', 'info');
+
+        let compiled: { pdfPath: string; sizeBytes: number } | null = null;
+
+        if (parsedResume) {
+          try {
+            compiled = await localPdfGenerator.generatePdfFromResume(
+              parsedResume,
+              resumeVersion.targetCompany || 'hireFlow',
+              resumeVersion.versionNumber
+            );
+          } catch (localErr) {
+            console.warn('Local PDF generation fallback:', localErr);
+          }
         }
 
-        AppToast.show('Compiling PDF document...', 'info');
-        const compiled = await latexCompiler.compileToPdf(
-          resumeVersion.latexSource,
-          resumeVersion.jobId || 'resumes',
-          resumeVersion.id
-        );
+        if (!compiled && resumeVersion.latexSource) {
+          compiled = await latexCompiler.compileToPdf(
+            resumeVersion.latexSource,
+            resumeVersion.targetCompany || 'hireFlow',
+            resumeVersion.id
+          );
+        }
+
+        if (!compiled) {
+          throw new Error('Could not generate PDF document.');
+        }
 
         targetPath = compiled.pdfPath;
 

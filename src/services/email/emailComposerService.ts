@@ -29,13 +29,19 @@ export const emailComposerService = {
   }): Promise<{ success: boolean; method: 'composer' | 'fallback_mailto' | 'fallback_share' }> {
     const fullBody = `${options.body.trim()}\n\n${options.signature.trim()}`;
 
-    // Verify attachment if provided
+    // Verify attachment and obtain content URI for cross-app sharing
     let verifiedAttachment: string | undefined = undefined;
     if (options.attachmentUri) {
       try {
         const info = await FileSystem.getInfoAsync(options.attachmentUri);
         if (info.exists) {
-          verifiedAttachment = options.attachmentUri;
+          try {
+            // Android requires a Content URI to grant external email apps read access
+            const contentUri = await FileSystem.getContentUriAsync(options.attachmentUri);
+            verifiedAttachment = contentUri || options.attachmentUri;
+          } catch {
+            verifiedAttachment = options.attachmentUri;
+          }
         }
       } catch (err) {
         console.warn('Could not verify attachment file:', err);

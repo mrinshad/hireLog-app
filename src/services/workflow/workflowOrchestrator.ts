@@ -7,6 +7,7 @@ import { emailGenerator } from '@/services/gemini/emailGenerator';
 import { jdAnalyzer } from '@/services/gemini/jdAnalyzer';
 import { CompilerError, latexCompiler } from '@/services/latex/compiler';
 import { latexRenderer } from '@/services/latex/latexRenderer';
+import { localPdfGenerator } from '@/services/pdf/pdfGenerator';
 import { matchingEngine } from '@/services/matching/matchingEngine';
 import { resumeCustomizer } from '@/services/resume/resumeCustomizer';
 import { resumeValidator } from '@/services/resume/resumeValidator';
@@ -192,13 +193,13 @@ export const workflowOrchestrator = {
           'master-v1'
         );
 
-        // Attempt remote PDF compilation gracefully
+        // Generate PDF document on-device directly into hireFlow/resumes/
         notify('GENERATING_RESUME', 'Generating PDF document...', 4);
         try {
-          const { pdfPath } = await latexCompiler.compileToPdf(
-            latexSource,
-            jobId,
-            newVersion.id
+          const { pdfPath } = await localPdfGenerator.generatePdfFromResume(
+            customizedResume,
+            job.company || jobId,
+            newVersion.versionNumber
           );
 
           await resumeRepository.updateResumePdf(
@@ -207,14 +208,19 @@ export const workflowOrchestrator = {
             'Generated',
             null
           );
-        } catch (compileErr: any) {
-          console.warn('PDF remote compilation skipped (fallback to in-app document view):', compileErr.message || compileErr);
-          await resumeRepository.updateResumePdf(
-            newVersion.id,
-            null,
-            'Generated',
-            compileErr.message || 'Compiled for in-app viewing'
-          );
+        } catch (localErr: any) {
+          console.warn('Local PDF generation fallback:', localErr.message || localErr);
+          // Fallback to remote LaTeX compiler if local engine fails
+          try {
+            const { pdfPath } = await latexCompiler.compileToPdf(
+              latexSource,
+              job.company || jobId,
+              newVersion.id
+            );
+            await resumeRepository.updateResumePdf(newVersion.id, pdfPath, 'Generated', null);
+          } catch {
+            await resumeRepository.updateResumePdf(newVersion.id, null, 'Generated', 'In-app viewer ready');
+          }
         }
 
         if (!completedSteps.includes('GENERATING_RESUME')) {

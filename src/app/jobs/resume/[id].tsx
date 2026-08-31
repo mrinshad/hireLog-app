@@ -25,6 +25,7 @@ import { profileRepository } from '@/database/repositories/profileRepository';
 import { resumeRepository } from '@/database/repositories/resumeRepository';
 import { CompilerError, latexCompiler } from '@/services/latex/compiler';
 import { latexRenderer } from '@/services/latex/latexRenderer';
+import { localPdfGenerator } from '@/services/pdf/pdfGenerator';
 import { ResumeVersion } from '@/services/latex/types';
 import { matchingEngine } from '@/services/matching/matchingEngine';
 import { resumeCustomizer } from '@/services/resume/resumeCustomizer';
@@ -251,22 +252,35 @@ export default function ResumePreviewScreen() {
         }
       }
 
-      // If PDF file does not exist on disk, compile it on-demand from LaTeX source
+      // If PDF file does not exist on disk, generate it on-demand
       if (!targetPath) {
-        if (!selectedVersion.latexSource || !selectedVersion.latexSource.trim()) {
-          AppDialog.alert(
-            'LaTeX Source Missing',
-            'Cannot generate PDF because LaTeX source code is not available.'
-          );
-          return;
+        AppToast.show('Generating PDF document...', 'info');
+
+        let compiled: { pdfPath: string; sizeBytes: number } | null = null;
+
+        if (customizedResume) {
+          try {
+            compiled = await localPdfGenerator.generatePdfFromResume(
+              customizedResume,
+              job?.company || 'hireFlow',
+              selectedVersion.versionNumber
+            );
+          } catch (localErr) {
+            console.warn('Local PDF generation fallback:', localErr);
+          }
         }
 
-        AppToast.show('Compiling PDF document...', 'info');
-        const compiled = await latexCompiler.compileToPdf(
-          selectedVersion.latexSource,
-          job?.id || 'resumes',
-          selectedVersion.id
-        );
+        if (!compiled && selectedVersion.latexSource) {
+          compiled = await latexCompiler.compileToPdf(
+            selectedVersion.latexSource,
+            job?.company || 'hireFlow',
+            selectedVersion.id
+          );
+        }
+
+        if (!compiled) {
+          throw new Error('Could not generate PDF document.');
+        }
 
         targetPath = compiled.pdfPath;
 

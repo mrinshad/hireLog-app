@@ -30,7 +30,9 @@ import { emailComposerService } from '@/services/email/emailComposerService';
 import { emailGenerator } from '@/services/gemini/emailGenerator';
 import { GeminiError } from '@/services/gemini/client';
 import { latexCompiler } from '@/services/latex/compiler';
+import { localPdfGenerator } from '@/services/pdf/pdfGenerator';
 import { ResumeVersion } from '@/services/latex/types';
+import { CustomizedResume } from '@/types/resume';
 import { matchingEngine } from '@/services/matching/matchingEngine';
 import { workflowOrchestrator } from '@/services/workflow/workflowOrchestrator';
 import { Job } from '@/types/job';
@@ -224,26 +226,44 @@ export default function EmailComposerScreen() {
       }
     }
 
-    if (latestResume.latexSource && latestResume.latexSource.trim()) {
-      try {
-        setIsCompilingPdf(true);
-        AppToast.show('Compiling resume PDF for attachment...', 'info');
-        const compiled = await latexCompiler.compileToPdf(
+    try {
+      setIsCompilingPdf(true);
+      AppToast.show('Generating resume PDF for attachment...', 'info');
+
+      let compiled: { pdfPath: string; sizeBytes: number } | null = null;
+
+      // Try local on-device generation from resumeJson
+      if (latestResume.resumeJson) {
+        try {
+          const parsed = JSON.parse(latestResume.resumeJson) as CustomizedResume;
+          compiled = await localPdfGenerator.generatePdfFromResume(
+            parsed,
+            job?.company || 'hireFlow',
+            latestResume.versionNumber
+          );
+        } catch (localErr) {
+          console.warn('Local PDF generation fallback:', localErr);
+        }
+      }
+
+      if (!compiled && latestResume.latexSource) {
+        compiled = await latexCompiler.compileToPdf(
           latestResume.latexSource,
           job?.company || job?.id || 'hireFlow',
           `v${latestResume.versionNumber}`
         );
+      }
 
+      if (compiled) {
         targetPath = compiled.pdfPath;
         await resumeRepository.updateResumePdf(latestResume.id, targetPath, 'Generated');
-
         setLatestResume((prev) => (prev ? { ...prev, pdfPath: targetPath } : null));
         return targetPath;
-      } catch (err) {
-        console.warn('Could not compile PDF for email attachment:', err);
-      } finally {
-        setIsCompilingPdf(false);
       }
+    } catch (err) {
+      console.warn('Could not compile PDF for email attachment:', err);
+    } finally {
+      setIsCompilingPdf(false);
     }
 
     return null;
@@ -254,11 +274,33 @@ export default function EmailComposerScreen() {
     try {
       setIsCompilingPdf(true);
       AppToast.show('Saving PDF document to hireFlow folder...', 'info');
-      const compiled = await latexCompiler.compileToPdf(
-        latestResume.latexSource,
-        job?.company || job?.id || 'hireFlow',
-        `v${latestResume.versionNumber}`
-      );
+
+      let compiled: { pdfPath: string; sizeBytes: number } | null = null;
+
+      if (latestResume.resumeJson) {
+        try {
+          const parsed = JSON.parse(latestResume.resumeJson) as CustomizedResume;
+          compiled = await localPdfGenerator.generatePdfFromResume(
+            parsed,
+            job?.company || 'hireFlow',
+            latestResume.versionNumber
+          );
+        } catch (localErr) {
+          console.warn('Local PDF generation fallback:', localErr);
+        }
+      }
+
+      if (!compiled && latestResume.latexSource) {
+        compiled = await latexCompiler.compileToPdf(
+          latestResume.latexSource,
+          job?.company || job?.id || 'hireFlow',
+          `v${latestResume.versionNumber}`
+        );
+      }
+
+      if (!compiled) {
+        throw new Error('Could not generate PDF document.');
+      }
 
       await resumeRepository.updateResumePdf(latestResume.id, compiled.pdfPath, 'Generated');
       setLatestResume((prev) => (prev ? { ...prev, pdfPath: compiled.pdfPath } : null));
@@ -266,8 +308,8 @@ export default function EmailComposerScreen() {
     } catch (err: any) {
       console.error('Error saving PDF:', err);
       AppDialog.error(
-        'PDF Compilation Failed',
-        err.message || 'Could not compile PDF. Please verify internet connection.'
+        'PDF Generation Failed',
+        err.message || 'Could not generate PDF file.'
       );
     } finally {
       setIsCompilingPdf(false);
