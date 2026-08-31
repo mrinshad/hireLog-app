@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 import Feather from '@expo/vector-icons/Feather';
 
 import { AppHeader } from '@/components/common/AppHeader';
@@ -233,12 +234,52 @@ export default function ResumePreviewScreen() {
   };
 
   const handleOpenWith = async () => {
-    if (!selectedVersion?.pdfPath) {
-      AppDialog.alert('PDF Not Available', 'PDF file has not been compiled yet.');
-      return;
-    }
+    if (!selectedVersion) return;
 
     try {
+      let targetPath = selectedVersion.pdfPath;
+
+      // Check if file exists on disk
+      if (targetPath) {
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(targetPath);
+          if (!fileInfo.exists) {
+            targetPath = undefined;
+          }
+        } catch {
+          targetPath = undefined;
+        }
+      }
+
+      // If PDF file does not exist on disk, compile it on-demand from LaTeX source
+      if (!targetPath) {
+        if (!selectedVersion.latexSource || !selectedVersion.latexSource.trim()) {
+          AppDialog.alert(
+            'LaTeX Source Missing',
+            'Cannot generate PDF because LaTeX source code is not available.'
+          );
+          return;
+        }
+
+        AppToast.show('Compiling PDF document...', 'info');
+        const compiled = await latexCompiler.compileToPdf(
+          selectedVersion.latexSource,
+          job?.id || 'resumes',
+          selectedVersion.id
+        );
+
+        targetPath = compiled.pdfPath;
+
+        // Persist updated pdfPath in SQLite database
+        await resumeRepository.updateResumePdf(
+          selectedVersion.id,
+          targetPath,
+          'Generated'
+        );
+
+        selectedVersion.pdfPath = targetPath;
+      }
+
       const isAvailable = await Sharing.isAvailableAsync();
       if (!isAvailable) {
         AppDialog.alert(
@@ -248,14 +289,17 @@ export default function ResumePreviewScreen() {
         return;
       }
 
-      await Sharing.shareAsync(selectedVersion.pdfPath, {
+      await Sharing.shareAsync(targetPath, {
         mimeType: 'application/pdf',
         dialogTitle: 'Open With...',
         UTI: 'com.adobe.pdf',
       });
     } catch (error: any) {
-      console.error('Error opening PDF:', error);
-      AppDialog.error('Viewer Error', 'Failed to open PDF document.');
+      console.error('Error compiling/opening PDF:', error);
+      AppDialog.error(
+        'PDF Compilation Failed',
+        error.message || 'Could not compile PDF document. Please verify internet connection.'
+      );
     }
   };
 

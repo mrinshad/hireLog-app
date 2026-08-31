@@ -11,6 +11,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 import Feather from '@expo/vector-icons/Feather';
 
 import { AppHeader } from '@/components/common/AppHeader';
@@ -21,6 +22,7 @@ import { StatusBadge } from '@/components/common/StatusBadge';
 import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
 import { AppDialog, AppToast } from '@/context/DialogContext';
 import { resumeRepository } from '@/database/repositories/resumeRepository';
+import { latexCompiler } from '@/services/latex/compiler';
 import { ResumeVersion } from '@/services/latex/types';
 import { formatRelativeDate } from '@/services/tracking/trackingHelpers';
 import { JobStatus } from '@/types/job';
@@ -66,12 +68,59 @@ export default function ResumeDetailsScreen() {
   }, [id]);
 
   const handleOpenWith = async () => {
-    if (!resumeVersion?.pdfPath) {
-      AppDialog.alert('PDF Not Available', 'PDF file has not been compiled yet.');
-      return;
-    }
+    if (!resumeVersion) return;
 
     try {
+      let targetPath = resumeVersion.pdfPath;
+
+      // Check if file exists on disk
+      if (targetPath) {
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(targetPath);
+          if (!fileInfo.exists) {
+            targetPath = undefined;
+          }
+        } catch {
+          targetPath = undefined;
+        }
+      }
+
+      // If PDF file does not exist on disk, compile it on-demand from LaTeX source
+      if (!targetPath) {
+        if (!resumeVersion.latexSource || !resumeVersion.latexSource.trim()) {
+          AppDialog.alert(
+            'LaTeX Source Missing',
+            'Cannot generate PDF because LaTeX source code is not available.'
+          );
+          return;
+        }
+
+        AppToast.show('Compiling PDF document...', 'info');
+        const compiled = await latexCompiler.compileToPdf(
+          resumeVersion.latexSource,
+          resumeVersion.jobId || 'resumes',
+          resumeVersion.id
+        );
+
+        targetPath = compiled.pdfPath;
+
+        // Persist updated pdfPath in SQLite database
+        await resumeRepository.updateResumePdf(
+          resumeVersion.id,
+          targetPath,
+          'Generated'
+        );
+
+        setResumeVersion((prev) =>
+          prev
+            ? {
+                ...prev,
+                pdfPath: targetPath,
+              }
+            : null
+        );
+      }
+
       const isAvailable = await Sharing.isAvailableAsync();
       if (!isAvailable) {
         AppDialog.alert(
@@ -81,14 +130,17 @@ export default function ResumeDetailsScreen() {
         return;
       }
 
-      await Sharing.shareAsync(resumeVersion.pdfPath, {
+      await Sharing.shareAsync(targetPath, {
         mimeType: 'application/pdf',
         dialogTitle: 'Open With...',
         UTI: 'com.adobe.pdf',
       });
     } catch (error: any) {
-      console.error('Error opening PDF:', error);
-      AppDialog.error('Viewer Error', 'Failed to open PDF document.');
+      console.error('Error compiling/opening PDF:', error);
+      AppDialog.error(
+        'PDF Compilation Failed',
+        error.message || 'Could not compile PDF document. Please verify internet connection.'
+      );
     }
   };
 
