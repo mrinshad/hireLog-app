@@ -729,6 +729,14 @@ export default function JobDetailsScreen() {
                   ))
                 )}
               </View>
+
+              {/* Action: Customize Resume */}
+              <TouchableOpacity
+                style={styles.customizeResumeBtn}
+                activeOpacity={0.8}
+                onPress={() => router.push(`/jobs/customize/${job.id}`)}>
+                <Text style={styles.customizeResumeBtnText}>⚡ Customize Resume</Text>
+              </TouchableOpacity>
             </View>
           )}
         </View>
@@ -1365,5 +1373,17 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#DC2626',
+  },
+  customizeResumeBtn: {
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  customizeResumeBtnText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });
