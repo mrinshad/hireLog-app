@@ -16,7 +16,7 @@ export function runLatexRendererTests(): { total: number; passed: number; failed
     }
   }
 
-  console.log('\n--- Running LaTeX Resume Engine Tests ---');
+  console.log('\n--- Running Master Resume LaTeX Engine Tests ---');
 
   const baseResume: CustomizedResume = {
     jobId: 'job-101',
@@ -95,21 +95,32 @@ export function runLatexRendererTests(): { total: number; passed: number; failed
     generatedAt: new Date().toISOString(),
   };
 
-  // Test 1: Full profile rendering
+  // Test 1: Full profile rendering and all 9 custom macros
   {
     const latex = latexRenderer.render(baseResume);
+    const hasAllMacros =
+      latex.includes('\\newcommand{\\resumeItem}') &&
+      latex.includes('\\newcommand{\\resumeSubheading}') &&
+      latex.includes('\\newcommand{\\resumeSubSubheading}') &&
+      latex.includes('\\newcommand{\\resumeProjectHeading}') &&
+      latex.includes('\\newcommand{\\resumeSubItem}') &&
+      latex.includes('\\newcommand{\\resumeSubHeadingListStart}') &&
+      latex.includes('\\newcommand{\\resumeSubHeadingListEnd}') &&
+      latex.includes('\\newcommand{\\resumeItemListStart}') &&
+      latex.includes('\\newcommand{\\resumeItemListEnd}');
+
     assert(
-      latex.includes('\\documentclass') &&
+      hasAllMacros &&
+        latex.includes('\\documentclass') &&
         latex.includes('\\begin{document}') &&
         latex.includes('\\end{document}') &&
         latex.includes('Mohammed Antigravity') &&
         latex.includes('\\section{Professional Summary}') &&
-        latex.includes('\\section{Technical Skills}') &&
+        latex.includes('\\section{Skills}') &&
         latex.includes('\\section{Experience}') &&
-        latex.includes('\\section{Projects}') &&
-        latex.includes('\\section{Education}') &&
-        latex.includes('\\section{Certifications}'),
-      'Test 1: Full profile renders complete LaTeX document structure'
+        latex.includes('\\section{Selected Projects}') &&
+        latex.includes('\\section{Education}'),
+      'Test 1: Master template renders all 9 custom macros and exact document structure'
     );
   }
 
@@ -126,7 +137,7 @@ export function runLatexRendererTests(): { total: number; passed: number; failed
     );
   }
 
-  // Test 3: Profile with multiple projects
+  // Test 3: Multiple projects are formatted with \resumeProjectHeading
   {
     const resumeMultiProj: CustomizedResume = {
       ...baseResume,
@@ -148,8 +159,10 @@ export function runLatexRendererTests(): { total: number; passed: number; failed
     };
     const latex = latexRenderer.render(resumeMultiProj);
     assert(
-      latex.includes('School ERP') && latex.includes('Crusher Management System'),
-      'Test 3: Multiple projects are formatted and rendered in ordered subheadings'
+      latex.includes('School ERP') &&
+        latex.includes('Crusher Management System') &&
+        latex.includes('\\resumeProjectHeading'),
+      'Test 3: Multiple projects are formatted using \\resumeProjectHeading'
     );
   }
 
@@ -169,7 +182,7 @@ export function runLatexRendererTests(): { total: number; passed: number; failed
         escaped.includes('\\textasciicircum{}') &&
         escaped.includes('\\textless{}script\\textgreater{}') &&
         escaped.includes('\\textbackslash{}'),
-      'Test 4: Special characters (&, %, $, #, _, {, }, ~, ^, <, >, \\) are properly escaped'
+      'Test 4: Special characters (&, %, $, #, _, {, }, ~, ^, <, >, \\) are safely escaped'
     );
   }
 
@@ -199,26 +212,50 @@ export function runLatexRendererTests(): { total: number; passed: number; failed
     );
   }
 
-  // Test 6: Custom section order & visibility configuration
+  // Test 6: Comparing Node.js JD resume vs .NET JD resume produces identical visual macros and layout
   {
-    const customConfig = {
-      sectionOrder: ['skills' as const, 'experience' as const, 'projects' as const],
-      showSummary: false,
-      showEducation: false,
-      showCertifications: false,
+    const nodeJsResume: CustomizedResume = {
+      ...baseResume,
+      targetRole: 'Senior Node.js Developer',
+      targetCompany: 'NodeCorp',
+      summary: 'Senior Node.js Developer with expertise in microservices and PostgreSQL.',
+      skills: [
+        { profileId: 's-1', name: 'Node.js', category: 'Backend', priority: 'required', displayOrder: 1 },
+        { profileId: 's-2', name: 'PostgreSQL', category: 'Databases', priority: 'required', displayOrder: 2 },
+      ],
     };
-    const latex = latexRenderer.render(baseResume, customConfig);
 
-    const skillsPos = latex.indexOf('\\section{Technical Skills}');
-    const expPos = latex.indexOf('\\section{Experience}');
+    const dotNetResume: CustomizedResume = {
+      ...baseResume,
+      targetRole: 'Senior .NET Developer',
+      targetCompany: 'MicrosoftPartner',
+      summary: '.NET Developer with strong experience in C# and SQL Server.',
+      skills: [
+        { profileId: 's-5', name: 'C#', category: 'Programming Languages', priority: 'required', displayOrder: 1 },
+        { profileId: 's-6', name: '.NET Core', category: 'Backend', priority: 'required', displayOrder: 2 },
+      ],
+    };
+
+    const nodeLatex = latexRenderer.render(nodeJsResume);
+    const dotNetLatex = latexRenderer.render(dotNetResume);
+
+    // Verify both have the exact same master preamble structure, macros, geometry, and styling commands
+    const nodeMacroSection = nodeLatex.substring(
+      nodeLatex.indexOf('\\documentclass'),
+      nodeLatex.indexOf('\\newcommand{\\resumeItemListEnd}')
+    );
+    const dotNetMacroSection = dotNetLatex.substring(
+      dotNetLatex.indexOf('\\documentclass'),
+      dotNetLatex.indexOf('\\newcommand{\\resumeItemListEnd}')
+    );
 
     assert(
-      skillsPos !== -1 &&
-        expPos !== -1 &&
-        skillsPos < expPos &&
-        !latex.includes('\\section{Professional Summary}') &&
-        !latex.includes('\\section{Education}'),
-      'Test 6: Template configuration respects custom section ordering and section visibility flags'
+      nodeMacroSection === dotNetMacroSection &&
+        nodeLatex.includes('Node.js') &&
+        dotNetLatex.includes('C\\#') &&
+        nodeLatex.includes('\\section{Selected Projects}') &&
+        dotNetLatex.includes('\\section{Selected Projects}'),
+      'Test 6: Node.js JD and .NET JD resumes produce identical visual master template preambles and macros with differing factual content'
     );
   }
 

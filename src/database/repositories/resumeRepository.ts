@@ -6,6 +6,7 @@ interface ResumeVersionRow {
   id: string;
   job_id: string;
   version_number: number;
+  template_version?: string | null;
   target_role: string;
   target_company: string;
   latex_source: string;
@@ -22,6 +23,7 @@ function mapRowToVersion(row: ResumeVersionRow): ResumeVersion {
     id: row.id,
     jobId: row.job_id,
     versionNumber: row.version_number,
+    templateVersion: row.template_version || 'master-v1',
     targetRole: row.target_role,
     targetCompany: row.target_company,
     latexSource: row.latex_source,
@@ -44,7 +46,8 @@ export const resumeRepository = {
     latexSource: string,
     pdfPath: string | null = null,
     generationStatus: ResumeGenerationStatus = 'Generated',
-    errorLog: string | null = null
+    errorLog: string | null = null,
+    templateVersion: string = 'master-v1'
   ): Promise<ResumeVersion> {
     const db = await getDatabase();
     const id = `resume_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
@@ -60,11 +63,12 @@ export const resumeRepository = {
     const resumeJson = JSON.stringify(resume);
 
     await db.runAsync(
-      `INSERT INTO resume_versions (id, job_id, version_number, target_role, target_company, latex_source, resume_json, pdf_path, generation_status, error_log, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+      `INSERT INTO resume_versions (id, job_id, version_number, template_version, target_role, target_company, latex_source, resume_json, pdf_path, generation_status, error_log, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       id,
       jobId,
       nextVersionNumber,
+      templateVersion,
       resume.targetRole || '',
       resume.targetCompany || '',
       latexSource,
@@ -80,6 +84,7 @@ export const resumeRepository = {
       id,
       jobId,
       versionNumber: nextVersionNumber,
+      templateVersion,
       targetRole: resume.targetRole || '',
       targetCompany: resume.targetCompany || '',
       latexSource,
@@ -125,7 +130,7 @@ export const resumeRepository = {
   async getResumeVersions(jobId: string): Promise<ResumeVersion[]> {
     const db = await getDatabase();
     const rows = await db.getAllAsync<ResumeVersionRow>(
-      'SELECT id, job_id, version_number, target_role, target_company, latex_source, resume_json, pdf_path, generation_status, error_log, created_at, updated_at FROM resume_versions WHERE job_id = ? ORDER BY version_number DESC;',
+      'SELECT id, job_id, version_number, template_version, target_role, target_company, latex_source, resume_json, pdf_path, generation_status, error_log, created_at, updated_at FROM resume_versions WHERE job_id = ? ORDER BY version_number DESC;',
       jobId
     );
     return rows.map(mapRowToVersion);
@@ -137,7 +142,7 @@ export const resumeRepository = {
   async getLatestResumeVersion(jobId: string): Promise<ResumeVersion | null> {
     const db = await getDatabase();
     const row = await db.getFirstAsync<ResumeVersionRow>(
-      'SELECT id, job_id, version_number, target_role, target_company, latex_source, resume_json, pdf_path, generation_status, error_log, created_at, updated_at FROM resume_versions WHERE job_id = ? ORDER BY version_number DESC LIMIT 1;',
+      'SELECT id, job_id, version_number, template_version, target_role, target_company, latex_source, resume_json, pdf_path, generation_status, error_log, created_at, updated_at FROM resume_versions WHERE job_id = ? ORDER BY version_number DESC LIMIT 1;',
       jobId
     );
     return row ? mapRowToVersion(row) : null;
@@ -149,7 +154,7 @@ export const resumeRepository = {
   async getResumeVersion(id: string): Promise<ResumeVersion | null> {
     const db = await getDatabase();
     const row = await db.getFirstAsync<ResumeVersionRow>(
-      'SELECT id, job_id, version_number, target_role, target_company, latex_source, resume_json, pdf_path, generation_status, error_log, created_at, updated_at FROM resume_versions WHERE id = ?;',
+      'SELECT id, job_id, version_number, template_version, target_role, target_company, latex_source, resume_json, pdf_path, generation_status, error_log, created_at, updated_at FROM resume_versions WHERE id = ?;',
       id
     );
     return row ? mapRowToVersion(row) : null;

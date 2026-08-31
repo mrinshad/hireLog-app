@@ -1,5 +1,6 @@
 import { CustomizedResume } from '@/types/resume';
 import {
+  MASTER_TEMPLATE_VERSION,
   renderCertifications,
   renderEducation,
   renderExperience,
@@ -13,7 +14,8 @@ import { DEFAULT_TEMPLATE_CONFIG, ResumeSectionId, TemplateConfig } from './type
 
 export const latexRenderer = {
   /**
-   * Renders a CustomizedResume into a complete, compilable LaTeX document string.
+   * Renders a CustomizedResume into a complete, compilable LaTeX document string
+   * based on the Master Resume Template.
    */
   render(
     resume: CustomizedResume,
@@ -22,6 +24,7 @@ export const latexRenderer = {
     const config: TemplateConfig = {
       ...DEFAULT_TEMPLATE_CONFIG,
       ...customConfig,
+      templateVersion: customConfig.templateVersion || DEFAULT_TEMPLATE_CONFIG.templateVersion || MASTER_TEMPLATE_VERSION,
     };
 
     const preamble = renderPreamble(config);
@@ -46,6 +49,8 @@ export const latexRenderer = {
       .filter((content) => content.trim().length > 0);
 
     return `${preamble}
+% Template Version: ${config.templateVersion}
+% Generated for: ${resume.targetRole || 'Software Engineer'} at ${resume.targetCompany || 'Company'}
 
 \\begin{document}
 

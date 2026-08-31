@@ -15,6 +15,7 @@ export type ResumeGenerationStatus =
   | 'Failed';
 
 export interface TemplateConfig {
+  templateVersion: string;
   sectionOrder: ResumeSectionId[];
   showSummary: boolean;
   showSkills: boolean;
@@ -30,6 +31,7 @@ export interface TemplateConfig {
 }
 
 export const DEFAULT_TEMPLATE_CONFIG: TemplateConfig = {
+  templateVersion: 'master-v1',
   sectionOrder: [
     'summary',
     'skills',
@@ -55,6 +57,7 @@ export interface ResumeVersion {
   id: string;
   jobId: string;
   versionNumber: number;
+  templateVersion: string;
   targetRole: string;
   targetCompany: string;
   latexSource: string;

@@ -2,13 +2,35 @@ import { CustomizedResume } from '@/types/resume';
 import { escapeLatex, escapeMultilineToItems } from './escape';
 import { TemplateConfig } from './types';
 
+export const MASTER_TEMPLATE_VERSION = 'master-v1';
+
+/**
+ * Standard Canonical Categories for Master Resume Skills
+ */
+const CANONICAL_CATEGORIES: Record<string, string> = {
+  frontend: 'Frontend',
+  backend: 'Backend',
+  databases: 'Databases & ORM',
+  'databases & orm': 'Databases & ORM',
+  cloud: 'Cloud, Infra & DevOps',
+  'devops / infrastructure': 'Cloud, Infra & DevOps',
+  'cloud, infra & devops': 'Cloud, Infra & DevOps',
+  tools: 'Tools',
+  'programming languages': 'Software Engineering',
+  'software engineering': 'Software Engineering',
+  other: 'Technical Skills',
+};
+
+/**
+ * Renders the Master Resume LaTeX Preamble containing all 9 custom macros.
+ */
 export function renderPreamble(config: TemplateConfig): string {
   return `%-------------------------
-% Auto-Generated Resume from HireLog
-% Professional ATS-Compliant Template
+% Master Resume Template (${config.templateVersion || MASTER_TEMPLATE_VERSION})
+% ATS-Compliant Layout
 %-------------------------
 
-\\documentclass[letterpaper,${config.fontSize}]{article}
+\\documentclass[letterpaper,${config.fontSize || '10.5pt'}]{article}
 
 \\usepackage{latexsym}
 \\usepackage[empty]{fullpage}
@@ -23,7 +45,7 @@ export function renderPreamble(config: TemplateConfig): string {
 \\usepackage{tabularx}
 \\usepackage{geometry}
 
-\\geometry{letterpaper, margin=${config.marginSize}}
+\\geometry{letterpaper, margin=${config.marginSize || '0.5in'}}
 
 \\pagestyle{fancy}
 \\fancyhf{} % clear all header and footer fields
@@ -49,7 +71,9 @@ export function renderPreamble(config: TemplateConfig): string {
   \\vspace{-4pt}\\scshape\\raggedright\\large
 }{}{0em}{}[\\color{black}\\titlerule \\vspace{-5pt}]
 
-% Custom commands
+%-------------------------
+% Custom Master Resume Macros
+%-------------------------
 \\newcommand{\\resumeItem}[1]{
   \\item\\small{
     {#1 \\vspace{-2pt}}
@@ -64,12 +88,21 @@ export function renderPreamble(config: TemplateConfig): string {
     \\end{tabular*}\\vspace{-7pt}
 }
 
+\\newcommand{\\resumeSubSubheading}[2]{
+  \\item
+    \\begin{tabular*}{0.97\\textwidth}{l@{\\extracolsep{\\fill}}r}
+      \\textit{\\small#1} & \\textit{\\small #2} \\\\
+    \\end{tabular*}\\vspace{-7pt}
+}
+
 \\newcommand{\\resumeProjectHeading}[2]{
   \\vspace{-2pt}\\item
     \\begin{tabular*}{0.97\\textwidth}{l@{\\extracolsep{\\fill}}r}
       #1 & #2 \\\\
     \\end{tabular*}\\vspace{-7pt}
 }
+
+\\newcommand{\\resumeSubItem}[1]{\\resumeItem{#1}\\vspace{-4pt}}
 
 \\newcommand{\\resumeSubHeadingListStart}{\\begin{itemize}[leftmargin=0.15in, label={}]}
 \\newcommand{\\resumeSubHeadingListEnd}{\\end{itemize}}
@@ -78,6 +111,9 @@ export function renderPreamble(config: TemplateConfig): string {
 `;
 }
 
+/**
+ * Renders the Master Resume Header with Name and hyperlinked Contact Items.
+ */
 export function renderHeader(
   resume: CustomizedResume,
   config: TemplateConfig
@@ -120,6 +156,9 @@ export function renderHeader(
 `;
 }
 
+/**
+ * Renders the Professional Summary section.
+ */
 export function renderSummary(resume: CustomizedResume): string {
   if (!resume.summary || !resume.summary.trim()) {
     return '';
@@ -134,19 +173,25 @@ export function renderSummary(resume: CustomizedResume): string {
 `;
 }
 
+/**
+ * Renders Technical Skills organized by master canonical categories.
+ */
 export function renderSkills(resume: CustomizedResume): string {
   if (!resume.skills || resume.skills.length === 0) {
     return '';
   }
 
-  // Group skills by category
+  // Group skills by category with canonical grouping
   const categoriesMap = new Map<string, string[]>();
+
   resume.skills.forEach((skill) => {
-    const cat = skill.category || 'Technical Skills';
-    if (!categoriesMap.has(cat)) {
-      categoriesMap.set(cat, []);
+    const rawCat = (skill.category || 'Other').toLowerCase().trim();
+    const standardCat = CANONICAL_CATEGORIES[rawCat] || skill.category || 'Technical Skills';
+
+    if (!categoriesMap.has(standardCat)) {
+      categoriesMap.set(standardCat, []);
     }
-    categoriesMap.get(cat)!.push(escapeLatex(skill.name));
+    categoriesMap.get(standardCat)!.push(escapeLatex(skill.name));
   });
 
   const categoryLines: string[] = [];
@@ -157,7 +202,7 @@ export function renderSkills(resume: CustomizedResume): string {
   });
 
   return `%-----------TECHNICAL SKILLS-----------
-\\section{Technical Skills}
+\\section{Skills}
 \\begin{itemize}[leftmargin=0.15in, label={}]
     \\small{\\item{
       ${categoryLines.join(' \\\\\n      ')}
@@ -167,6 +212,9 @@ export function renderSkills(resume: CustomizedResume): string {
 `;
 }
 
+/**
+ * Renders Experience section using \resumeSubheading and itemized bullets.
+ */
 export function renderExperience(
   resume: CustomizedResume,
   config: TemplateConfig
@@ -221,6 +269,9 @@ ${experienceBlocks.join('\n')}
 `;
 }
 
+/**
+ * Renders Selected Projects section using \resumeProjectHeading and itemized bullets.
+ */
 export function renderProjects(
   resume: CustomizedResume,
   config: TemplateConfig
@@ -270,14 +321,17 @@ export function renderProjects(
       ${itemsContent}`;
   });
 
-  return `%-----------PROJECTS-----------
-\\section{Projects}
+  return `%-----------SELECTED PROJECTS-----------
+\\section{Selected Projects}
   \\resumeSubHeadingListStart
 ${projectBlocks.join('\n')}
   \\resumeSubHeadingListEnd
 `;
 }
 
+/**
+ * Renders Education section using \resumeSubheading.
+ */
 export function renderEducation(resume: CustomizedResume): string {
   if (!resume.education || resume.education.length === 0) {
     return '';
@@ -311,6 +365,9 @@ ${educationBlocks.join('\n')}
 `;
 }
 
+/**
+ * Renders optional Certifications section.
+ */
 export function renderCertifications(resume: CustomizedResume): string {
   if (!resume.certifications || resume.certifications.length === 0) {
     return '';
