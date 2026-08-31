@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { CertificationsModal } from '@/components/profile/CertificationsModal';
@@ -10,6 +10,7 @@ import { ProfessionalInfoModal } from '@/components/profile/ProfessionalInfoModa
 import { ProfileSectionCard } from '@/components/profile/ProfileSectionCard';
 import { ProjectsModal } from '@/components/profile/ProjectsModal';
 import { SkillsModal } from '@/components/profile/SkillsModal';
+import { profileRepository } from '@/database/repositories/profileRepository';
 import {
   Certification,
   Education,
@@ -34,9 +35,97 @@ type ActiveModal =
 
 export default function ProfileScreen() {
   const [profile, setProfile] = useState<Profile>(INITIAL_PROFILE);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [activeModal, setActiveModal] = useState<ActiveModal>(null);
 
-  // Summary formatters
+  // Load saved profile from SQLite on mount
+  useEffect(() => {
+    async function loadSavedProfile() {
+      try {
+        const saved = await profileRepository.getProfile();
+        setProfile(saved);
+      } catch (error) {
+        console.error('Failed to load profile from SQLite:', error);
+        Alert.alert('Error', 'Failed to load saved profile data from local storage.');
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    loadSavedProfile();
+  }, []);
+
+  // Save handlers with SQLite persistence
+  const handleSavePersonal = async (data: PersonalDetails) => {
+    try {
+      await profileRepository.savePersonalDetails(data);
+      setProfile((prev) => ({ ...prev, personalDetails: data }));
+    } catch (error) {
+      console.error('Failed to save personal details:', error);
+      Alert.alert('Error', 'Failed to save personal details to local storage.');
+    }
+  };
+
+  const handleSaveProfessional = async (data: ProfessionalInfo) => {
+    try {
+      await profileRepository.saveProfessionalInfo(data);
+      setProfile((prev) => ({ ...prev, professionalInfo: data }));
+    } catch (error) {
+      console.error('Failed to save professional info:', error);
+      Alert.alert('Error', 'Failed to save professional info to local storage.');
+    }
+  };
+
+  const handleSaveSkills = async (skills: Skill[]) => {
+    try {
+      await profileRepository.saveSkills(skills);
+      setProfile((prev) => ({ ...prev, skills }));
+    } catch (error) {
+      console.error('Failed to save skills:', error);
+      Alert.alert('Error', 'Failed to save skills to local storage.');
+    }
+  };
+
+  const handleSaveExperience = async (experience: Experience[]) => {
+    try {
+      await profileRepository.saveExperiences(experience);
+      setProfile((prev) => ({ ...prev, experience }));
+    } catch (error) {
+      console.error('Failed to save experience:', error);
+      Alert.alert('Error', 'Failed to save experience to local storage.');
+    }
+  };
+
+  const handleSaveProjects = async (projects: Project[]) => {
+    try {
+      await profileRepository.saveProjects(projects);
+      setProfile((prev) => ({ ...prev, projects }));
+    } catch (error) {
+      console.error('Failed to save projects:', error);
+      Alert.alert('Error', 'Failed to save projects to local storage.');
+    }
+  };
+
+  const handleSaveEducation = async (education: Education[]) => {
+    try {
+      await profileRepository.saveEducation(education);
+      setProfile((prev) => ({ ...prev, education }));
+    } catch (error) {
+      console.error('Failed to save education:', error);
+      Alert.alert('Error', 'Failed to save education to local storage.');
+    }
+  };
+
+  const handleSaveCertifications = async (certifications: Certification[]) => {
+    try {
+      await profileRepository.saveCertifications(certifications);
+      setProfile((prev) => ({ ...prev, certifications }));
+    } catch (error) {
+      console.error('Failed to save certifications:', error);
+      Alert.alert('Error', 'Failed to save certifications to local storage.');
+    }
+  };
+
+  // Dynamic summary formatters
   const getPersonalSummary = () => {
     const { fullName, location, email } = profile.personalDetails;
     if (!fullName) return 'Name, email, phone, location & profiles';
@@ -95,6 +184,17 @@ export default function ProfileScreen() {
       .join(', ');
     return profile.certifications.length > 2 ? `${sample}...` : sample;
   };
+
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#2563EB" />
+          <Text style={styles.loadingText}>Loading Profile...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -191,63 +291,49 @@ export default function ProfileScreen() {
         visible={activeModal === 'personal'}
         initialData={profile.personalDetails}
         onClose={() => setActiveModal(null)}
-        onSave={(data: PersonalDetails) => {
-          setProfile((prev) => ({ ...prev, personalDetails: data }));
-        }}
+        onSave={handleSavePersonal}
       />
 
       <ProfessionalInfoModal
         visible={activeModal === 'professional'}
         initialData={profile.professionalInfo}
         onClose={() => setActiveModal(null)}
-        onSave={(data: ProfessionalInfo) => {
-          setProfile((prev) => ({ ...prev, professionalInfo: data }));
-        }}
+        onSave={handleSaveProfessional}
       />
 
       <SkillsModal
         visible={activeModal === 'skills'}
         skills={profile.skills}
         onClose={() => setActiveModal(null)}
-        onSaveSkills={(skills: Skill[]) => {
-          setProfile((prev) => ({ ...prev, skills }));
-        }}
+        onSaveSkills={handleSaveSkills}
       />
 
       <ExperienceModal
         visible={activeModal === 'experience'}
         experiences={profile.experience}
         onClose={() => setActiveModal(null)}
-        onSaveExperiences={(experience: Experience[]) => {
-          setProfile((prev) => ({ ...prev, experience }));
-        }}
+        onSaveExperiences={handleSaveExperience}
       />
 
       <ProjectsModal
         visible={activeModal === 'projects'}
         projects={profile.projects}
         onClose={() => setActiveModal(null)}
-        onSaveProjects={(projects: Project[]) => {
-          setProfile((prev) => ({ ...prev, projects }));
-        }}
+        onSaveProjects={handleSaveProjects}
       />
 
       <EducationModal
         visible={activeModal === 'education'}
         educationList={profile.education}
         onClose={() => setActiveModal(null)}
-        onSaveEducation={(education: Education[]) => {
-          setProfile((prev) => ({ ...prev, education }));
-        }}
+        onSaveEducation={handleSaveEducation}
       />
 
       <CertificationsModal
         visible={activeModal === 'certifications'}
         certifications={profile.certifications}
         onClose={() => setActiveModal(null)}
-        onSaveCertifications={(certifications: Certification[]) => {
-          setProfile((prev) => ({ ...prev, certifications }));
-        }}
+        onSaveCertifications={handleSaveCertifications}
       />
     </SafeAreaView>
   );
@@ -257,6 +343,17 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: '#F8FAFC',
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+  },
+  loadingText: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '500',
   },
   header: {
     paddingHorizontal: 20,
