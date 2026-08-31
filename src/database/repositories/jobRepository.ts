@@ -346,11 +346,24 @@ export const jobRepository = {
   },
 
   /**
-   * Deletes a job posting and its associated application data from SQLite.
+   * Deletes a job posting and its associated application data from SQLite and cleans up local resume files.
    */
   async deleteJob(id: string): Promise<void> {
     const db = await getDatabase();
     await db.runAsync('DELETE FROM jobs WHERE id = ?;', id);
+
+    try {
+      const FileSystem = await import('expo-file-system/legacy');
+      if (FileSystem?.documentDirectory) {
+        const jobResumeDir = `${FileSystem.documentDirectory}resumes/${id}/`;
+        const dirInfo = await FileSystem.getInfoAsync(jobResumeDir);
+        if (dirInfo.exists) {
+          await FileSystem.deleteAsync(jobResumeDir, { idempotent: true });
+        }
+      }
+    } catch {
+      // Non-blocking file cleanup
+    }
   },
 
   /**

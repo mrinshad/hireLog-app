@@ -21,6 +21,7 @@ import { latexRenderer } from '@/services/latex/latexRenderer';
 import { ResumeVersion } from '@/services/latex/types';
 import { matchingEngine } from '@/services/matching/matchingEngine';
 import { resumeCustomizer } from '@/services/resume/resumeCustomizer';
+import { resumeValidator, ResumeValidationError } from '@/services/resume/resumeValidator';
 import { Job } from '@/types/job';
 import { CustomizedResume } from '@/types/resume';
 
@@ -85,6 +86,11 @@ export default function ResumePreviewScreen() {
     try {
       setIsGenerating(true);
       setShowErrorLog(false);
+
+      // Step 0: Validate resume against Profile source of truth
+      setGenerationStep('Validating resume against Profile...');
+      const profile = await profileRepository.getProfile();
+      resumeValidator.validate(profile, customizedResume);
 
       // Step 1: Render LaTeX source
       setGenerationStep('Generating LaTeX markup...');
