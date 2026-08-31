@@ -8,11 +8,7 @@
     "scheme": "hirelog",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.byten.hirelog",
-      "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
-      }
+      "icon": "./assets/expo.icon"
     },
     "android": {
       "package": "com.byten.hirelog",
@@ -49,10 +45,7 @@
     },
     "extra": {
       "router": {},
-      "eas": {
-        "projectId": "4546cbb1-b92a-4b2b-883a-454c5c5788be"
-      }
-    },
+      },
     "owner": "mrinshads-team"
   }
 }

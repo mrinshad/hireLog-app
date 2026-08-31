@@ -1,12 +1,12 @@
 import { settingsRepository } from '@/database/repositories/settingsRepository';
 
-const GEMINI_API_ENDPOINT =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
+const DEFAULT_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
 export interface GeminiRequestOptions {
   systemInstruction?: string;
   temperature?: number;
   timeoutMs?: number;
+  model?: string;
 }
 
 export class GeminiError extends Error {
@@ -24,7 +24,7 @@ export class GeminiError extends Error {
 
 export const geminiClient = {
   /**
-   * Sends a structured JSON prompt to Gemini 2.5 Flash.
+   * Sends a structured JSON prompt to Gemini with automatic model fallback.
    */
   async generateJson<T>(prompt: string, options: GeminiRequestOptions = {}): Promise<T> {
     const apiKey = await settingsRepository.getGeminiApiKey();
@@ -36,6 +36,51 @@ export const geminiClient = {
       );
     }
 
+    const customModel = (await settingsRepository.getSetting('gemini_model')) || process.env.EXPO_PUBLIC_GEMINI_MODEL;
+    const candidateModels = options.model
+      ? [options.model]
+      : customModel && customModel.trim()
+      ? [customModel.trim(), ...DEFAULT_MODELS.filter((m) => m !== customModel.trim())]
+      : DEFAULT_MODELS;
+
+    let lastError: any = null;
+
+    for (const model of candidateModels) {
+      try {
+        return await this.executeModelRequest<T>(model, apiKey, prompt, options);
+      } catch (err: any) {
+        lastError = err;
+        const msg = err.message || '';
+        // If the model is not found, deprecated, or unavailable, try next candidate
+        const isModelUnavailable =
+          msg.includes('no longer available') ||
+          msg.includes('not found') ||
+          msg.includes('unsupported') ||
+          msg.includes('404') ||
+          msg.includes('deprecated');
+
+        if (isModelUnavailable && candidateModels.indexOf(model) < candidateModels.length - 1) {
+          console.warn(`Gemini model ${model} unavailable, falling back to next candidate...`);
+          continue;
+        }
+
+        throw err;
+      }
+    }
+
+    throw lastError || new GeminiError('Failed to generate response from Gemini API.', 'UNKNOWN');
+  },
+
+  /**
+   * Executes a single request for a given model.
+   */
+  async executeModelRequest<T>(
+    model: string,
+    apiKey: string,
+    prompt: string,
+    options: GeminiRequestOptions
+  ): Promise<T> {
+    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     const { systemInstruction, temperature = 0.1, timeoutMs = 35000 } = options;
 
     const requestBody = {
@@ -61,7 +106,7 @@ export const geminiClient = {
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(`${GEMINI_API_ENDPOINT}?key=${encodeURIComponent(apiKey)}`, {
+      const response = await fetch(`${endpoint}?key=${encodeURIComponent(apiKey)}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -107,7 +152,7 @@ export const geminiClient = {
 
       try {
         return JSON.parse(textOutput) as T;
-      } catch (parseError) {
+      } catch {
         throw new GeminiError(
           'Failed to parse JSON response from Gemini API.',
           'INVALID_RESPONSE'
