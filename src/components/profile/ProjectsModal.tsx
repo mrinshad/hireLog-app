@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { AppDialog } from '@/context/DialogContext';
 
 import { Project } from '@/types/profile';
 
@@ -117,16 +118,16 @@ export function ProjectsModal({
   };
 
   const handleDelete = (id: string, name: string) => {
-    Alert.alert('Delete Project', `Are you sure you want to delete project "${name}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          setList((prev) => prev.filter((item) => item.id !== id));
-        },
+    AppDialog.confirm(
+      'Delete Project',
+      `Are you sure you want to remove project "${name}" from your profile?`,
+      () => {
+        setList((prev) => prev.filter((item) => item.id !== id));
       },
-    ]);
+      'Delete',
+      'Cancel',
+      true
+    );
   };
 
   const handleDone = () => {

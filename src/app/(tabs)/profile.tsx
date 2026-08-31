@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Feather from '@expo/vector-icons/Feather';
 
@@ -13,6 +13,7 @@ import { ProfileSectionCard } from '@/components/profile/ProfileSectionCard';
 import { ProjectsModal } from '@/components/profile/ProjectsModal';
 import { SkillsModal } from '@/components/profile/SkillsModal';
 import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
+import { AppDialog, AppToast } from '@/context/DialogContext';
 import { profileRepository } from '@/database/repositories/profileRepository';
 import {
   Certification,
@@ -48,7 +49,7 @@ export default function ProfileScreen() {
         setProfile(saved);
       } catch (error) {
         console.error('Failed to load profile:', error);
-        Alert.alert('Error', 'Failed to load profile.');
+        AppDialog.error('Profile Error', 'Failed to load profile information.');
       } finally {
         setIsLoading(false);
       }
@@ -60,9 +61,10 @@ export default function ProfileScreen() {
     try {
       await profileRepository.savePersonalDetails(data);
       setProfile((prev) => ({ ...prev, personalDetails: data }));
+      AppToast.show('Personal details saved', 'success');
     } catch (error) {
       console.error('Failed to save personal details:', error);
-      Alert.alert('Error', 'Failed to save personal details.');
+      AppDialog.error('Save Failed', 'Failed to save personal details.');
     }
   };
 
@@ -70,9 +72,10 @@ export default function ProfileScreen() {
     try {
       await profileRepository.saveProfessionalInfo(data);
       setProfile((prev) => ({ ...prev, professionalInfo: data }));
+      AppToast.show('Professional info saved', 'success');
     } catch (error) {
       console.error('Failed to save professional info:', error);
-      Alert.alert('Error', 'Failed to save professional info.');
+      AppDialog.error('Save Failed', 'Failed to save professional info.');
     }
   };
 
@@ -80,9 +83,10 @@ export default function ProfileScreen() {
     try {
       await profileRepository.saveSkills(skills);
       setProfile((prev) => ({ ...prev, skills }));
+      AppToast.show('Skills updated', 'success');
     } catch (error) {
       console.error('Failed to save skills:', error);
-      Alert.alert('Error', 'Failed to save skills.');
+      AppDialog.error('Save Failed', 'Failed to save skills.');
     }
   };
 
@@ -90,9 +94,10 @@ export default function ProfileScreen() {
     try {
       await profileRepository.saveExperiences(experience);
       setProfile((prev) => ({ ...prev, experience }));
+      AppToast.show('Experience saved', 'success');
     } catch (error) {
       console.error('Failed to save experience:', error);
-      Alert.alert('Error', 'Failed to save experience.');
+      AppDialog.error('Save Failed', 'Failed to save experience.');
     }
   };
 
@@ -100,9 +105,10 @@ export default function ProfileScreen() {
     try {
       await profileRepository.saveProjects(projects);
       setProfile((prev) => ({ ...prev, projects }));
+      AppToast.show('Projects saved', 'success');
     } catch (error) {
       console.error('Failed to save projects:', error);
-      Alert.alert('Error', 'Failed to save projects.');
+      AppDialog.error('Save Failed', 'Failed to save projects.');
     }
   };
 
@@ -110,9 +116,10 @@ export default function ProfileScreen() {
     try {
       await profileRepository.saveEducation(education);
       setProfile((prev) => ({ ...prev, education }));
+      AppToast.show('Education saved', 'success');
     } catch (error) {
       console.error('Failed to save education:', error);
-      Alert.alert('Error', 'Failed to save education.');
+      AppDialog.error('Save Failed', 'Failed to save education.');
     }
   };
 
@@ -120,9 +127,10 @@ export default function ProfileScreen() {
     try {
       await profileRepository.saveCertifications(certifications);
       setProfile((prev) => ({ ...prev, certifications }));
+      AppToast.show('Certifications saved', 'success');
     } catch (error) {
       console.error('Failed to save certifications:', error);
-      Alert.alert('Error', 'Failed to save certifications.');
+      AppDialog.error('Save Failed', 'Failed to save certifications.');
     }
   };
 

@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-
+import { AppDialog, AppToast } from '@/context/DialogContext';
 import { jobRepository } from '@/database/repositories/jobRepository';
 import { JOB_STATUSES, JobStatus } from '@/types/job';
 
@@ -54,7 +54,7 @@ export default function EditJobScreen() {
         }
       } catch (error) {
         console.error('Failed to load job for editing:', error);
-        Alert.alert('Error', 'Failed to load job data.');
+        AppDialog.error('Loading Error', 'Failed to load job data.');
       } finally {
         setIsLoading(false);
       }
@@ -100,10 +100,11 @@ export default function EditJobScreen() {
         status,
       });
 
+      AppToast.show('Job details updated', 'success');
       router.back();
     } catch (error) {
       console.error('Failed to update job:', error);
-      Alert.alert('Error', 'Failed to update job in local storage.');
+      AppDialog.error('Save Failed', 'Failed to update job in local storage.');
       setIsSaving(false);
     }
   };

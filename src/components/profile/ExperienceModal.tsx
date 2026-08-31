@@ -12,7 +12,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
+import Feather from '@expo/vector-icons/Feather';
+import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
+import { AppDialog } from '@/context/DialogContext';
 import { Experience } from '@/types/profile';
 
 interface ExperienceModalProps {
@@ -128,16 +130,16 @@ export function ExperienceModal({
   };
 
   const handleDelete = (id: string, company: string) => {
-    Alert.alert('Delete Experience', `Are you sure you want to delete experience at "${company}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          setList((prev) => prev.filter((item) => item.id !== id));
-        },
+    AppDialog.confirm(
+      'Delete Experience',
+      `Are you sure you want to remove your experience at "${company}" from your profile?`,
+      () => {
+        setList((prev) => prev.filter((item) => item.id !== id));
       },
-    ]);
+      'Delete',
+      'Cancel',
+      true
+    );
   };
 
   const handleDone = () => {

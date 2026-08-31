@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -17,6 +16,7 @@ import { AppHeader } from '@/components/common/AppHeader';
 import { Card } from '@/components/common/Card';
 import { PrimaryButton } from '@/components/common/Buttons';
 import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
+import { AppDialog, AppToast } from '@/context/DialogContext';
 import { settingsRepository } from '@/database/repositories/settingsRepository';
 
 export default function SettingsScreen() {
@@ -43,12 +43,12 @@ export default function SettingsScreen() {
   const handleSaveSettings = async () => {
     try {
       setIsSaving(true);
-      await settingsRepository.setGeminiApiKey(apiKey);
+      await settingsRepository.setGeminiApiKey(apiKey.trim());
       await settingsRepository.setSetting('latex_compiler_url', compilerUrl.trim());
-      Alert.alert('Saved', 'Settings updated.');
+      AppToast.show('Settings saved successfully', 'success');
     } catch (error) {
       console.error('Failed to save settings:', error);
-      Alert.alert('Error', 'Failed to save settings.');
+      AppDialog.error('Save Failed', 'Unable to update settings. Please check your connection and try again.');
     } finally {
       setIsSaving(false);
     }
@@ -66,7 +66,7 @@ export default function SettingsScreen() {
           <Card style={styles.card}>
             <View style={styles.cardHeaderRow}>
               <Feather name="cpu" size={IconSizes.md} color={Colors.primary} />
-              <Text style={Typography.sectionTitle}>Gemini AI API Key</Text>
+              <Text style={Typography.sectionTitle}>Google Gemini API Key</Text>
             </View>
 
             <View style={styles.inputGroup}>
@@ -93,7 +93,7 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               </View>
               <Text style={Typography.caption}>
-                Used exclusively for structured JD parsing on explicit request.
+                Used to extract job requirements and draft tailored application emails.
               </Text>
             </View>
           </Card>
@@ -102,7 +102,7 @@ export default function SettingsScreen() {
           <Card style={styles.card}>
             <View style={styles.cardHeaderRow}>
               <Feather name="file-text" size={IconSizes.md} color={Colors.primary} />
-              <Text style={Typography.sectionTitle}>LaTeX Compiler</Text>
+              <Text style={Typography.sectionTitle}>LaTeX PDF Compiler</Text>
             </View>
 
             <View style={styles.inputGroup}>
@@ -117,7 +117,7 @@ export default function SettingsScreen() {
                 onChangeText={setCompilerUrl}
               />
               <Text style={Typography.caption}>
-                Leave blank for default service, or enter your local endpoint.
+                Leave blank to use the built-in compiler service.
               </Text>
             </View>
           </Card>
@@ -136,12 +136,8 @@ export default function SettingsScreen() {
           <View style={styles.infoCard}>
             <Feather name="shield" size={IconSizes.sm} color={Colors.primary} />
             <Text style={styles.infoText}>
-              All profile data, resumes, drafts, and settings remain stored on-device.
+              All your profile data, resumes, drafts, and settings remain stored on your device.
             </Text>
-          </View>
-
-          <View style={styles.footer}>
-            <Text style={Typography.caption}>HireLog v1.0.0 • Local-First</Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -163,22 +159,23 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: Spacing.lg,
     paddingBottom: Spacing.xxxl,
+    gap: Spacing.md,
   },
   card: {
-    marginBottom: Spacing.lg,
+    gap: Spacing.md,
   },
   cardHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
-    marginBottom: Spacing.md,
   },
   inputGroup: {
     gap: Spacing.xs,
   },
   inputRow: {
     flexDirection: 'row',
-    gap: Spacing.sm,
+    alignItems: 'center',
+    gap: Spacing.xs,
   },
   input: {
     backgroundColor: Colors.surfaceSubtle,
@@ -198,32 +195,27 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md,
-    justifyContent: 'center',
+    padding: Spacing.sm,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   saveBtn: {
     marginTop: Spacing.sm,
-    marginBottom: Spacing.xl,
   },
   infoCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.primaryLight,
+    padding: Spacing.md,
     borderRadius: Radius.md,
+    gap: Spacing.sm,
     borderWidth: 1,
     borderColor: Colors.primaryBorder,
-    padding: Spacing.md,
-    gap: Spacing.sm,
-    marginBottom: Spacing.xl,
   },
   infoText: {
+    flex: 1,
     fontSize: 12,
     color: Colors.primaryDark,
-    flex: 1,
     lineHeight: 16,
-  },
-  footer: {
-    alignItems: 'center',
   },
 });

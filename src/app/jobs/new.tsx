@@ -11,12 +11,14 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 
 import { AppHeader } from '@/components/common/AppHeader';
 import { Card } from '@/components/common/Card';
-import { PrimaryButton } from '@/components/common/Buttons';
-import { Colors, Radius, Spacing, Typography } from '@/constants/theme';
+import { PrimaryButton, SecondaryButton } from '@/components/common/Buttons';
+import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
+import { AppDialog } from '@/context/DialogContext';
 import { jobRepository } from '@/database/repositories/jobRepository';
 import { JOB_STATUSES, JobStatus } from '@/types/job';
 
@@ -77,7 +79,7 @@ export default function NewJobScreen() {
       router.replace(`/jobs/progress/${newJob.id}` as any);
     } catch (error) {
       console.error('Failed to create job:', error);
-      Alert.alert('Error', 'Failed to save job to local storage.');
+      AppDialog.error('Creation Failed', 'Unable to create job application. Please try again.');
       setIsSaving(false);
     }
   };

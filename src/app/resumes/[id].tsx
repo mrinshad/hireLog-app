@@ -19,6 +19,7 @@ import { Card } from '@/components/common/Card';
 import { DestructiveButton, PrimaryButton, SecondaryButton } from '@/components/common/Buttons';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
+import { AppDialog, AppToast } from '@/context/DialogContext';
 import { resumeRepository } from '@/database/repositories/resumeRepository';
 import { ResumeVersion } from '@/services/latex/types';
 import { formatRelativeDate } from '@/services/tracking/trackingHelpers';
@@ -54,7 +55,7 @@ export default function ResumeDetailsScreen() {
       }
     } catch (error) {
       console.error('Failed to load resume details:', error);
-      Alert.alert('Error', 'Failed to load resume details.');
+      AppDialog.error('Loading Error', 'Failed to load resume details.');
     } finally {
       setIsLoading(false);
     }
@@ -66,15 +67,15 @@ export default function ResumeDetailsScreen() {
 
   const handleOpenPdf = async () => {
     if (!resumeVersion?.pdfPath) {
-      Alert.alert('PDF Not Available', 'PDF file has not been compiled yet.');
+      AppDialog.alert('PDF Not Available', 'PDF file has not been compiled yet.');
       return;
     }
 
     try {
       const isAvailable = await Sharing.isAvailableAsync();
       if (!isAvailable) {
-        Alert.alert(
-          'Sharing Unavailable',
+        AppDialog.alert(
+          'Viewer Unavailable',
           'Document viewing is not available on this platform.'
         );
         return;
@@ -87,7 +88,7 @@ export default function ResumeDetailsScreen() {
       });
     } catch (error: any) {
       console.error('Error opening PDF:', error);
-      Alert.alert('Error', 'Failed to open PDF file.');
+      AppDialog.error('Viewer Error', 'Failed to open PDF document.');
     }
   };
 
@@ -96,35 +97,33 @@ export default function ResumeDetailsScreen() {
     try {
       await Clipboard.setStringAsync(resumeVersion.latexSource);
       setIsCopied(true);
+      AppToast.show('LaTeX copied to clipboard', 'info');
       setTimeout(() => setIsCopied(false), 2500);
     } catch (error) {
       console.error('Failed to copy to clipboard:', error);
-      Alert.alert('Error', 'Failed to copy LaTeX source.');
+      AppDialog.error('Copy Error', 'Failed to copy LaTeX source.');
     }
   };
 
   const handleDelete = () => {
     if (!resumeVersion) return;
 
-    Alert.alert(
-      'Delete Resume Version?',
-      `Are you sure you want to delete version v${resumeVersion.versionNumber} for ${resumeVersion.targetCompany}? The associated Job posting and Profile will NOT be deleted.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await resumeRepository.deleteResumeVersion(resumeVersion.id);
-              router.replace('/resumes');
-            } catch (error) {
-              console.error('Failed to delete resume version:', error);
-              Alert.alert('Error', 'Failed to delete resume version.');
-            }
-          },
-        },
-      ]
+    AppDialog.confirm(
+      'Delete Resume Version',
+      `Delete version v${resumeVersion.versionNumber} for ${resumeVersion.targetCompany}? The job application will remain.`,
+      async () => {
+        try {
+          await resumeRepository.deleteResumeVersion(resumeVersion.id);
+          AppToast.show('Resume version removed', 'info');
+          router.replace('/resumes');
+        } catch (error) {
+          console.error('Failed to delete resume version:', error);
+          AppDialog.error('Delete Failed', 'Failed to delete resume version.');
+        }
+      },
+      'Delete',
+      'Cancel',
+      true
     );
   };
 

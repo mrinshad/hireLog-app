@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   AppState,
   AppStateStatus,
   KeyboardAvoidingView,
@@ -21,6 +20,7 @@ import { AppHeader } from '@/components/common/AppHeader';
 import { Card } from '@/components/common/Card';
 import { PrimaryButton, SecondaryButton } from '@/components/common/Buttons';
 import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
+import { AppDialog, AppToast } from '@/context/DialogContext';
 import { emailRepository } from '@/database/repositories/emailRepository';
 import { jobRepository } from '@/database/repositories/jobRepository';
 import { profileRepository } from '@/database/repositories/profileRepository';
@@ -116,7 +116,7 @@ export default function EmailComposerScreen() {
         }
       } catch (error) {
         console.error('Failed to load email composer data:', error);
-        Alert.alert('Error', 'Failed to load email composer.');
+        AppDialog.error('Loading Error', 'Failed to load email composer.');
       } finally {
         setIsLoading(false);
       }
@@ -172,10 +172,11 @@ export default function EmailComposerScreen() {
         signature,
         resumeFilePath: latestResume?.pdfPath || null,
       });
+      AppToast.show('Draft generated with Gemini', 'success');
     } catch (error: any) {
       console.error('Failed to generate email with Gemini:', error);
-      Alert.alert(
-        'Email Generation Failed',
+      AppDialog.error(
+        'Generation Failed',
         error instanceof GeminiError ? error.message : 'Could not generate email body.'
       );
     } finally {
@@ -196,10 +197,10 @@ export default function EmailComposerScreen() {
         signature,
         resumeFilePath: latestResume?.pdfPath || null,
       });
-      Alert.alert('Saved', 'Draft saved locally.');
+      AppToast.show('Email draft saved', 'success');
     } catch (error) {
       console.error('Failed to save draft:', error);
-      Alert.alert('Error', 'Failed to save email draft.');
+      AppDialog.error('Save Failed', 'Failed to save email draft.');
     } finally {
       setIsSaving(false);
     }
@@ -209,29 +210,26 @@ export default function EmailComposerScreen() {
     if (!job) return;
 
     if (!recipient.trim()) {
-      Alert.alert('Recipient Missing', 'Please enter a recipient email address.');
+      AppDialog.alert('Recipient Missing', 'Please enter an employer or recruiter email address.');
       return;
     }
 
     if (!body.trim()) {
-      Alert.alert('Body Empty', 'Please enter or generate an email body first.');
+      AppDialog.alert('Body Empty', 'Please enter or generate your email text before sending.');
       return;
     }
 
     if (!latestResume?.pdfPath) {
-      Alert.alert(
-        'Resume Attachment Missing',
-        'No compiled PDF resume found for this job. Generate the resume first or proceed without attachment?',
-        [
-          { text: 'Generate Resume', onPress: () => router.push(`/jobs/resume/${job.id}`) },
-          {
-            text: 'Send Without Attachment',
-            style: 'destructive',
-            onPress: () => launchEmailIntent(null),
-          },
+      AppDialog.show({
+        title: 'Resume Attachment Missing',
+        message: 'No compiled PDF resume found. Would you like to compile your resume first or proceed without attachment?',
+        type: 'warning',
+        buttons: [
+          { text: 'Compile Resume', style: 'default', onPress: () => router.push(`/jobs/resume/${job.id}`) },
+          { text: 'Send Without Resume', style: 'destructive', onPress: () => launchEmailIntent(null) },
           { text: 'Cancel', style: 'cancel' },
-        ]
-      );
+        ],
+      });
       return;
     }
 
@@ -264,7 +262,7 @@ export default function EmailComposerScreen() {
     } catch (error: any) {
       setHasOpenedEmailApp(false);
       console.error('Error opening email client:', error);
-      Alert.alert('Error', error.message || 'Failed to open email application.');
+      AppDialog.error('Email App Error', error.message || 'Failed to open your email application.');
     }
   };
 
@@ -273,9 +271,8 @@ export default function EmailComposerScreen() {
     try {
       await workflowOrchestrator.confirmApplicationSent(job.id);
       setShowSentPrompt(false);
-      Alert.alert('Application Updated', 'Job marked as Applied!', [
-        { text: 'View Job', onPress: () => router.replace(`/jobs/${job.id}`) },
-      ]);
+      AppToast.show('Application marked as Applied!', 'success');
+      router.replace(`/jobs/${job.id}`);
     } catch (error) {
       console.error('Failed to update job status:', error);
     }
@@ -286,7 +283,7 @@ export default function EmailComposerScreen() {
       <SafeAreaView style={styles.safeArea}>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Colors.primary} />
-          <Text style={Typography.caption}>Loading composer...</Text>
+          <Text style={Typography.caption}>Loading email composer...</Text>
         </View>
       </SafeAreaView>
     );
@@ -325,9 +322,9 @@ export default function EmailComposerScreen() {
         />
 
         <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-          {/* Gate 2 Header Banner */}
+          {/* Header Banner */}
           <Card style={styles.gateBannerCard}>
-            <Text style={Typography.sectionTitle}>Gate 2: Review & Send Application</Text>
+            <Text style={Typography.sectionTitle}>Review & Send Application</Text>
             <Text style={[Typography.caption, { marginVertical: Spacing.xs }]}>
               Verify your application email and attachment. Tapping "Open in Email App" will transfer the draft into your email client.
             </Text>
@@ -455,7 +452,7 @@ export default function EmailComposerScreen() {
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Confirmation Modal when returning from external email app */}
+      {/* In-App Confirmation Modal when returning from external email app */}
       {showSentPrompt && (
         <View style={styles.modalBackdrop}>
           <Card style={styles.modalCard}>

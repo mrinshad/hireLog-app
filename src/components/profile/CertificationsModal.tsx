@@ -10,7 +10,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
+import Feather from '@expo/vector-icons/Feather';
+import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
+import { AppDialog } from '@/context/DialogContext';
 import { Certification } from '@/types/profile';
 
 interface CertificationsModalProps {
@@ -116,16 +118,16 @@ export function CertificationsModal({
   };
 
   const handleDelete = (id: string, name: string) => {
-    Alert.alert('Delete Certification', `Are you sure you want to delete "${name}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          setList((prev) => prev.filter((item) => item.id !== id));
-        },
+    AppDialog.confirm(
+      'Delete Certification',
+      `Are you sure you want to remove "${name}" from your profile?`,
+      () => {
+        setList((prev) => prev.filter((item) => item.id !== id));
       },
-    ]);
+      'Delete',
+      'Cancel',
+      true
+    );
   };
 
   const handleDone = () => {

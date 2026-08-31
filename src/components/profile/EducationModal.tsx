@@ -10,7 +10,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
+import Feather from '@expo/vector-icons/Feather';
+import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
+import { AppDialog } from '@/context/DialogContext';
 import { Education } from '@/types/profile';
 
 interface EducationModalProps {
@@ -120,16 +122,16 @@ export function EducationModal({
   };
 
   const handleDelete = (id: string, degree: string) => {
-    Alert.alert('Delete Education', `Are you sure you want to delete "${degree}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          setList((prev) => prev.filter((item) => item.id !== id));
-        },
+    AppDialog.confirm(
+      'Delete Education',
+      `Are you sure you want to remove "${degree}" from your profile?`,
+      () => {
+        setList((prev) => prev.filter((item) => item.id !== id));
       },
-    ]);
+      'Delete',
+      'Cancel',
+      true
+    );
   };
 
   const handleDone = () => {

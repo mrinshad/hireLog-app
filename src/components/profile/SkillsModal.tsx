@@ -10,7 +10,9 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
+import Feather from '@expo/vector-icons/Feather';
+import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
+import { AppDialog } from '@/context/DialogContext';
 import { SKILL_CATEGORIES, Skill, SkillCategory } from '@/types/profile';
 
 interface SkillsModalProps {
@@ -74,20 +76,20 @@ export function SkillsModal({ visible, skills, onClose, onSaveSkills }: SkillsMo
   };
 
   const handleDelete = (id: string, name: string) => {
-    Alert.alert('Delete Skill', `Are you sure you want to delete "${name}"?`, [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          setSkillList((prev) => prev.filter((item) => item.id !== id));
-          if (editingSkillId === id) {
-            setEditingSkillId(null);
-            setSkillName('');
-          }
-        },
+    AppDialog.confirm(
+      'Remove Skill',
+      `Are you sure you want to remove "${name}" from your profile?`,
+      () => {
+        setSkillList((prev) => prev.filter((item) => item.id !== id));
+        if (editingSkillId === id) {
+          setEditingSkillId(null);
+          setSkillName('');
+        }
       },
-    ]);
+      'Remove',
+      'Cancel',
+      true
+    );
   };
 
   const handleDone = () => {

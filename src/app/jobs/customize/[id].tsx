@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { AppDialog } from '@/context/DialogContext';
 
 import { jobRepository } from '@/database/repositories/jobRepository';
 import { profileRepository } from '@/database/repositories/profileRepository';
@@ -50,7 +51,7 @@ export default function ResumeCustomizationScreen() {
         setResume(customized);
       } catch (error) {
         console.error('Failed to customize resume:', error);
-        Alert.alert('Error', 'Failed to generate tailored resume content.');
+        AppDialog.error('Tailoring Error', 'Failed to generate tailored resume content.');
       } finally {
         setIsLoading(false);
       }

@@ -18,6 +18,7 @@ import { Card } from '@/components/common/Card';
 import { DestructiveButton, PrimaryButton, SecondaryButton } from '@/components/common/Buttons';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
+import { AppDialog, AppToast } from '@/context/DialogContext';
 import { jobRepository } from '@/database/repositories/jobRepository';
 import { resumeRepository } from '@/database/repositories/resumeRepository';
 import { ResumeVersion } from '@/services/latex/types';
@@ -52,7 +53,7 @@ export default function JobDetailsScreen() {
       setLatestResume(resumeVer);
     } catch (error) {
       console.error('Failed to load job details:', error);
-      Alert.alert('Error', 'Failed to load job details.');
+      AppDialog.error('Loading Error', 'Failed to load job details.');
     } finally {
       setIsLoading(false);
     }
@@ -74,9 +75,10 @@ export default function JobDetailsScreen() {
       setJob(updated);
       setStatusHistory(updatedHistory);
       setShowStatusModal(false);
+      AppToast.show(`Status updated to ${newStatus}`, 'success');
     } catch (error) {
       console.error('Failed to update status:', error);
-      Alert.alert('Error', 'Failed to update status.');
+      AppDialog.error('Status Error', 'Failed to update status.');
     }
   };
 
@@ -85,34 +87,32 @@ export default function JobDetailsScreen() {
     try {
       await workflowOrchestrator.confirmApplicationSent(job.id);
       await loadJobData();
-      Alert.alert('Updated', 'Application marked as Applied!');
+      AppToast.show('Application marked as Applied!', 'success');
     } catch (error) {
       console.error('Failed to mark applied:', error);
+      AppDialog.error('Update Error', 'Failed to update application status.');
     }
   };
 
   const handleDeleteJob = () => {
     if (!job) return;
 
-    Alert.alert(
-      'Delete Job?',
+    AppDialog.confirm(
+      'Delete Application',
       `Delete application for ${job.company || 'this job'}? Associated resume versions and drafts will also be removed.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await jobRepository.deleteJob(job.id);
-              router.replace('/jobs');
-            } catch (error) {
-              console.error('Failed to delete job:', error);
-              Alert.alert('Error', 'Failed to delete job.');
-            }
-          },
-        },
-      ]
+      async () => {
+        try {
+          await jobRepository.deleteJob(job.id);
+          AppToast.show('Application deleted', 'info');
+          router.replace('/jobs');
+        } catch (error) {
+          console.error('Failed to delete job:', error);
+          AppDialog.error('Delete Failed', 'Failed to delete application.');
+        }
+      },
+      'Delete',
+      'Cancel',
+      true
     );
   };
 

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,6 +17,7 @@ import { AppHeader } from '@/components/common/AppHeader';
 import { Card } from '@/components/common/Card';
 import { PrimaryButton, SecondaryButton } from '@/components/common/Buttons';
 import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
+import { AppDialog, AppToast } from '@/context/DialogContext';
 import { jobRepository } from '@/database/repositories/jobRepository';
 import { profileRepository } from '@/database/repositories/profileRepository';
 import { resumeRepository } from '@/database/repositories/resumeRepository';
@@ -44,7 +44,6 @@ export default function ResumePreviewScreen() {
   const [isApproving, setIsApproving] = useState(false);
   const [generationStep, setGenerationStep] = useState<string>('');
   const [isCopied, setIsCopied] = useState(false);
-  const [showErrorLog, setShowErrorLog] = useState(false);
 
   const loadData = async () => {
     if (!id) return;
@@ -71,13 +70,12 @@ export default function ResumePreviewScreen() {
       const existingVersions = await resumeRepository.getResumeVersions(jobData.id);
       setVersions(existingVersions);
       if (existingVersions.length > 0) {
-        // If there's an approved version, select it by default, otherwise newest
         const approvedVer = existingVersions.find((v) => v.id === jobData.approvedResumeVersionId);
         setSelectedVersion(approvedVer || existingVersions[0]);
       }
     } catch (error) {
       console.error('Failed to load resume preview data:', error);
-      Alert.alert('Error', 'Failed to load resume details.');
+      AppDialog.error('Loading Error', 'Failed to load resume details.');
     } finally {
       setIsLoading(false);
     }
@@ -91,7 +89,10 @@ export default function ResumePreviewScreen() {
     if (!job || !selectedVersion) return;
 
     if (selectedVersion.generationStatus !== 'Generated' || !selectedVersion.pdfPath) {
-      Alert.alert('PDF Not Ready', 'Please ensure the PDF has finished compiling before approving.');
+      AppDialog.alert(
+        'PDF Not Ready',
+        'Please ensure the PDF document has finished compiling before approving.'
+      );
       return;
     }
 
@@ -100,13 +101,14 @@ export default function ResumePreviewScreen() {
       const result = await workflowOrchestrator.approveResume(job.id, selectedVersion.id);
 
       if (result.success && result.nextRoute) {
+        AppToast.show('Resume approved for application', 'success');
         router.replace(result.nextRoute as any);
       } else {
-        Alert.alert('Approval Failed', result.error || 'Failed to advance workflow.');
+        AppDialog.error('Approval Issue', result.error || 'Failed to advance workflow.');
       }
     } catch (error: any) {
       console.error('Approval error:', error);
-      Alert.alert('Error', error.message || 'Failed to approve resume.');
+      AppDialog.error('Approval Failed', error.message || 'Failed to approve resume.');
     } finally {
       setIsApproving(false);
     }
@@ -117,7 +119,6 @@ export default function ResumePreviewScreen() {
 
     try {
       setIsGenerating(true);
-      setShowErrorLog(false);
 
       setGenerationStep('Validating against Profile...');
       const profile = await profileRepository.getProfile();
@@ -153,10 +154,7 @@ export default function ResumePreviewScreen() {
         setVersions(updatedVersions);
         setSelectedVersion(newVersion);
 
-        Alert.alert(
-          'Resume Generated',
-          `Resume version v${newVersion.versionNumber} has been compiled and saved.`
-        );
+        AppToast.show(`Resume version v${newVersion.versionNumber} ready`, 'success');
       } catch (compileErr: any) {
         const errorLog =
           compileErr instanceof CompilerError
@@ -177,14 +175,14 @@ export default function ResumePreviewScreen() {
         setVersions(updatedVersions);
         setSelectedVersion(newVersion);
 
-        Alert.alert(
+        AppDialog.error(
           'Compilation Failed',
-          compileErr.message || 'Failed to compile LaTeX to PDF.'
+          compileErr.message || 'Failed to compile LaTeX into PDF.'
         );
       }
     } catch (error: any) {
       console.error('Resume generation error:', error);
-      Alert.alert('Error', error.message || 'Failed to generate resume.');
+      AppDialog.error('Generation Failed', error.message || 'Failed to generate resume.');
     } finally {
       setIsGenerating(false);
       setGenerationStep('');
@@ -193,15 +191,15 @@ export default function ResumePreviewScreen() {
 
   const handleOpenPdf = async () => {
     if (!selectedVersion?.pdfPath) {
-      Alert.alert('PDF Not Available', 'PDF file has not been compiled yet.');
+      AppDialog.alert('PDF Not Available', 'PDF file has not been compiled yet.');
       return;
     }
 
     try {
       const isAvailable = await Sharing.isAvailableAsync();
       if (!isAvailable) {
-        Alert.alert(
-          'Sharing Unavailable',
+        AppDialog.alert(
+          'Document Viewer Unavailable',
           'Document viewing is not available on this platform.'
         );
         return;
@@ -214,7 +212,7 @@ export default function ResumePreviewScreen() {
       });
     } catch (error: any) {
       console.error('Error opening PDF:', error);
-      Alert.alert('Error', 'Failed to open PDF file.');
+      AppDialog.error('Viewer Error', 'Failed to open PDF document.');
     }
   };
 
@@ -223,10 +221,11 @@ export default function ResumePreviewScreen() {
     try {
       await Clipboard.setStringAsync(selectedVersion.latexSource);
       setIsCopied(true);
+      AppToast.show('LaTeX code copied to clipboard', 'info');
       setTimeout(() => setIsCopied(false), 2500);
     } catch (error) {
       console.error('Failed to copy to clipboard:', error);
-      Alert.alert('Error', 'Failed to copy LaTeX source.');
+      AppDialog.error('Copy Failed', 'Failed to copy LaTeX code.');
     }
   };
 
@@ -291,7 +290,7 @@ export default function ResumePreviewScreen() {
 
         {/* Gate 1 Approval Action Card */}
         <Card style={styles.approvalGateCard}>
-          <Text style={Typography.sectionTitle}>Gate 1: Review & Approve Resume</Text>
+          <Text style={Typography.sectionTitle}>Review & Approve Resume</Text>
           <Text style={[Typography.caption, { marginVertical: Spacing.xs }]}>
             Review the tailored PDF resume below. Approving will automatically prepare the application email.
           </Text>
