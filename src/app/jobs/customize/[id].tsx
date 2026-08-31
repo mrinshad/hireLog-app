@@ -336,14 +336,8 @@ export default function ResumeCustomizationScreen() {
         <TouchableOpacity
           style={styles.continueBtn}
           activeOpacity={0.8}
-          onPress={() => {
-            Alert.alert(
-              'Resume Content Ready',
-              'Tailored resume data is ready! In the upcoming module, this will compile directly into your LaTeX template.',
-              [{ text: 'OK' }]
-            );
-          }}>
-          <Text style={styles.continueBtnText}>Continue to Resume →</Text>
+          onPress={() => router.push(`/jobs/resume/${job.id}`)}>
+          <Text style={styles.continueBtnText}>Continue to Resume Engine →</Text>
         </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
