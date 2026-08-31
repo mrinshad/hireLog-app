@@ -2,30 +2,37 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-export default function HomeScreen() {
+export default function ProfileScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         {/* App Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>HireLog</Text>
-          <Text style={styles.subtitle}>Manage your job applications</Text>
+          <Text style={styles.title}>Profile</Text>
+          <Text style={styles.subtitle}>Your professional background</Text>
         </View>
 
-        {/* Dashboard Placeholder Area */}
-        <View style={styles.dashboardPlaceholder}>
+        {/* Profile Placeholder Area */}
+        <View style={styles.card}>
           <View style={styles.badge}>
-            <Text style={styles.badgeText}>Foundation Ready</Text>
+            <Text style={styles.badgeText}>Candidate Profile</Text>
           </View>
-          <Text style={styles.placeholderTitle}>Application Dashboard</Text>
-          <Text style={styles.placeholderDescription}>
-            Your active job applications, tailored resumes, and outreach tracking will appear here.
+          <Text style={styles.cardTitle}>Career & Resume Data</Text>
+          <Text style={styles.cardDescription}>
+            This section will store your background details used to generate tailored resumes.
           </Text>
+
+          <View style={styles.featureList}>
+            <Text style={styles.featureItem}>• Personal details & contact info</Text>
+            <Text style={styles.featureItem}>• Skills, work experience & projects</Text>
+            <Text style={styles.featureItem}>• Education & certifications</Text>
+            <Text style={styles.featureItem}>• Master resume information</Text>
+          </View>
         </View>
 
         {/* Footer info */}
         <View style={styles.footer}>
-          <Text style={styles.footerText}>HireLog v1.0.0</Text>
+          <Text style={styles.footerText}>HireLog Profile Module</Text>
         </View>
       </View>
     </SafeAreaView>
@@ -39,34 +46,32 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingVertical: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     justifyContent: 'space-between',
   },
   header: {
-    marginTop: 12,
+    marginTop: 8,
   },
   title: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '700',
     color: '#0F172A',
     letterSpacing: -0.5,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 15,
     color: '#64748B',
-    marginTop: 6,
-    lineHeight: 22,
+    marginTop: 4,
+    lineHeight: 20,
   },
-  dashboardPlaceholder: {
+  card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 24,
+    padding: 20,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    borderStyle: 'dashed',
     alignItems: 'center',
-    justifyContent: 'center',
     marginVertical: 'auto',
   },
   badge: {
@@ -83,21 +88,34 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#2563EB',
   },
-  placeholderTitle: {
+  cardTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#1E293B',
     marginBottom: 8,
   },
-  placeholderDescription: {
+  cardDescription: {
     fontSize: 14,
     color: '#64748B',
     textAlign: 'center',
     lineHeight: 20,
+    marginBottom: 16,
+  },
+  featureList: {
+    alignSelf: 'stretch',
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    padding: 12,
+    gap: 6,
+  },
+  featureItem: {
+    fontSize: 13,
+    color: '#475569',
+    lineHeight: 18,
   },
   footer: {
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   footerText: {
     fontSize: 12,
