@@ -296,7 +296,13 @@ export default function ResumePreviewScreen() {
   }
 
   const isApproved = job.approvedResumeVersionId === selectedVersion?.id;
-  const isPdfReady = selectedVersion?.generationStatus === 'Generated' && !!selectedVersion.pdfPath;
+  const isResumeReady = Boolean(
+    (selectedVersion &&
+      (selectedVersion.generationStatus === 'Generated' ||
+        selectedVersion.latexSource ||
+        selectedVersion.resumeJson)) ||
+      customizedResume
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -340,7 +346,7 @@ export default function ResumePreviewScreen() {
             Review the tailored resume below. Approving will automatically prepare the application email.
           </Text>
 
-          {isPdfReady ? (
+          {isResumeReady ? (
             <View style={styles.approvalActions}>
               <PrimaryButton
                 title={isApproved ? 'Proceed to Email Review →' : 'Approve & Continue →'}
