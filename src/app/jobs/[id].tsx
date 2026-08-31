@@ -13,7 +13,9 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { jobRepository } from '@/database/repositories/jobRepository';
-import { JOB_STATUSES, Job, JobStatus } from '@/types/job';
+import { jdAnalyzer } from '@/services/gemini/jdAnalyzer';
+import { GeminiError } from '@/services/gemini/client';
+import { AnalysisStatus, JOB_STATUSES, Job, JobStatus } from '@/types/job';
 
 const STATUS_COLORS: Record<JobStatus, { bg: string; text: string; border: string }> = {
   Draft: { bg: '#F1F5F9', text: '#475569', border: '#CBD5E1' },
@@ -25,12 +27,25 @@ const STATUS_COLORS: Record<JobStatus, { bg: string; text: string; border: strin
   Withdrawn: { bg: '#F3F4F6', text: '#6B7280', border: '#E5E7EB' },
 };
 
+const ANALYSIS_STATUS_BADGES: Record<
+  AnalysisStatus,
+  { bg: string; text: string; border: string }
+> = {
+  'Not analyzed': { bg: '#F1F5F9', text: '#64748B', border: '#CBD5E1' },
+  Analyzing: { bg: '#EFF6FF', text: '#2563EB', border: '#BFDBFE' },
+  Analyzed: { bg: '#DCFCE7', text: '#16A34A', border: '#BBF7D0' },
+  Failed: { bg: '#FEE2E2', text: '#DC2626', border: '#FECACA' },
+  Outdated: { bg: '#FEF3C7', text: '#D97706', border: '#FDE68A' },
+};
+
 export default function JobDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
 
   const [job, setJob] = useState<Job | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   const loadJob = async () => {
     if (!id) return;
@@ -85,6 +100,48 @@ export default function JobDetailsScreen() {
     }
   };
 
+  const handleAnalyzeJD = async () => {
+    if (!job) return;
+
+    try {
+      setIsAnalyzing(true);
+      setAnalysisError(null);
+
+      // Update state to Analyzing
+      await jobRepository.updateJobAnalysis(job.id, 'Analyzing', job.analysis);
+      setJob((prev) => (prev ? { ...prev, analysisStatus: 'Analyzing' } : null));
+
+      // Call Gemini JD Analyzer
+      const result = await jdAnalyzer.analyze(job.jobDescription);
+
+      // Update SQLite with result
+      await jobRepository.updateJobAnalysis(job.id, 'Analyzed', result);
+      setJob((prev) =>
+        prev
+          ? {
+              ...prev,
+              analysisStatus: 'Analyzed',
+              analysis: result,
+              // If company or role was not previously filled in, auto-fill from analysis if present
+              company: prev.company || result.company || '',
+              role: prev.role || result.role || '',
+              location: prev.location || result.location || '',
+            }
+          : null
+      );
+    } catch (error: any) {
+      console.error('JD Analysis error:', error);
+      const message =
+        error instanceof GeminiError ? error.message : 'Analysis failed. Please try again.';
+      setAnalysisError(message);
+
+      await jobRepository.updateJobAnalysis(job.id, 'Failed', job.analysis);
+      setJob((prev) => (prev ? { ...prev, analysisStatus: 'Failed' } : null));
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -118,6 +175,8 @@ export default function JobDetailsScreen() {
   }
 
   const statusStyle = STATUS_COLORS[job.status] || STATUS_COLORS.Draft;
+  const analysisBadgeStyle =
+    ANALYSIS_STATUS_BADGES[job.analysisStatus] || ANALYSIS_STATUS_BADGES['Not analyzed'];
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -234,6 +293,178 @@ export default function JobDetailsScreen() {
           <Text style={styles.dateMeta}>
             Added on {new Date(job.createdAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}
           </Text>
+        </View>
+
+        {/* ===================================================
+            JD ANALYSIS SECTION (Gemini Integration)
+            =================================================== */}
+        <View style={styles.card}>
+          <View style={styles.analysisHeader}>
+            <View style={styles.analysisTitleRow}>
+              <Text style={styles.analysisTitle}>✨ JD Analysis</Text>
+              <View
+                style={[
+                  styles.analysisBadge,
+                  {
+                    backgroundColor: analysisBadgeStyle.bg,
+                    borderColor: analysisBadgeStyle.border,
+                  },
+                ]}>
+                <Text style={[styles.analysisBadgeText, { color: analysisBadgeStyle.text }]}>
+                  {job.analysisStatus}
+                </Text>
+              </View>
+            </View>
+
+            {job.analysis && (
+              <TouchableOpacity
+                style={styles.reanalyzeBtn}
+                onPress={handleAnalyzeJD}
+                disabled={isAnalyzing}>
+                <Text style={styles.reanalyzeText}>
+                  {isAnalyzing ? 'Analyzing...' : '↻ Re-analyze'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Outdated Warning */}
+          {job.analysisStatus === 'Outdated' && (
+            <View style={styles.outdatedBanner}>
+              <Text style={styles.outdatedBannerText}>
+                ⚠️ The Job Description was modified after the last analysis. Re-analyze to update structured skills and requirements.
+              </Text>
+            </View>
+          )}
+
+          {/* Error Message */}
+          {analysisError && (
+            <View style={styles.errorBanner}>
+              <Text style={styles.errorBannerText}>{analysisError}</Text>
+            </View>
+          )}
+
+          {/* State: Analyzing */}
+          {isAnalyzing ? (
+            <View style={styles.analyzingContainer}>
+              <ActivityIndicator size="small" color="#2563EB" />
+              <Text style={styles.analyzingText}>
+                Extracting structured skills and requirements with Gemini...
+              </Text>
+            </View>
+          ) : !job.analysis ? (
+            /* State: Not Analyzed or Failed without previous analysis */
+            <View style={styles.notAnalyzedContainer}>
+              <Text style={styles.notAnalyzedText}>
+                Use Gemini to extract required skills, preferred technologies, and key responsibilities from this Job Description.
+              </Text>
+              <TouchableOpacity
+                style={styles.analyzeActionBtn}
+                onPress={handleAnalyzeJD}
+                activeOpacity={0.8}>
+                <Text style={styles.analyzeActionBtnText}>✨ Analyze with Gemini</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            /* State: Analyzed (display structured data) */
+            <View style={styles.analysisContent}>
+              {/* Extracted Details Grid */}
+              <View style={styles.extractedGrid}>
+                {job.analysis.experienceRequirement && (
+                  <View style={styles.extractedRow}>
+                    <Text style={styles.extractedKey}>Experience:</Text>
+                    <Text style={styles.extractedVal}>{job.analysis.experienceRequirement}</Text>
+                  </View>
+                )}
+                {job.analysis.educationRequirement && (
+                  <View style={styles.extractedRow}>
+                    <Text style={styles.extractedKey}>Education:</Text>
+                    <Text style={styles.extractedVal}>{job.analysis.educationRequirement}</Text>
+                  </View>
+                )}
+                {job.analysis.workMode && (
+                  <View style={styles.extractedRow}>
+                    <Text style={styles.extractedKey}>Work Mode:</Text>
+                    <Text style={styles.extractedVal}>{job.analysis.workMode}</Text>
+                  </View>
+                )}
+                {job.analysis.employmentType && (
+                  <View style={styles.extractedRow}>
+                    <Text style={styles.extractedKey}>Type:</Text>
+                    <Text style={styles.extractedVal}>{job.analysis.employmentType}</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Required Skills */}
+              <View style={styles.skillsSection}>
+                <Text style={styles.skillSectionTitle}>
+                  Required Skills ({job.analysis.requiredSkills.length})
+                </Text>
+                {job.analysis.requiredSkills.length === 0 ? (
+                  <Text style={styles.noSkillsText}>No explicit required skills specified.</Text>
+                ) : (
+                  <View style={styles.skillChipsWrapper}>
+                    {job.analysis.requiredSkills.map((skill, index) => (
+                      <View key={index} style={styles.requiredSkillChip}>
+                        <Text style={styles.requiredSkillText}>{skill}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+
+              {/* Preferred Skills */}
+              {job.analysis.preferredSkills.length > 0 && (
+                <View style={styles.skillsSection}>
+                  <Text style={styles.skillSectionTitle}>
+                    Preferred / Bonus Skills ({job.analysis.preferredSkills.length})
+                  </Text>
+                  <View style={styles.skillChipsWrapper}>
+                    {job.analysis.preferredSkills.map((skill, index) => (
+                      <View key={index} style={styles.preferredSkillChip}>
+                        <Text style={styles.preferredSkillText}>{skill}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* Key Responsibilities */}
+              {job.analysis.responsibilities.length > 0 && (
+                <View style={styles.listSection}>
+                  <Text style={styles.listSectionTitle}>Key Responsibilities</Text>
+                  {job.analysis.responsibilities.map((resp, index) => (
+                    <View key={index} style={styles.bulletRow}>
+                      <Text style={styles.bulletPoint}>•</Text>
+                      <Text style={styles.bulletText}>{resp}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Other Requirements */}
+              {job.analysis.otherRequirements.length > 0 && (
+                <View style={styles.listSection}>
+                  <Text style={styles.listSectionTitle}>Other Requirements</Text>
+                  {job.analysis.otherRequirements.map((req, index) => (
+                    <View key={index} style={styles.bulletRow}>
+                      <Text style={styles.bulletPoint}>•</Text>
+                      <Text style={styles.bulletText}>{req}</Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              <Text style={styles.analyzedDate}>
+                Analyzed on{' '}
+                {new Date(job.analysis.analyzedAt).toLocaleDateString(undefined, {
+                  dateStyle: 'medium',
+                  timeStyle: 'short',
+                })}
+              </Text>
+            </View>
+          )}
         </View>
 
         {/* Complete Raw Job Description */}
@@ -453,6 +684,211 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     marginTop: 14,
   },
+  /* Analysis styles */
+  analysisHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  analysisTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  analysisTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  analysisBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  analysisBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  reanalyzeBtn: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  reanalyzeText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
+  outdatedBanner: {
+    backgroundColor: '#FEF3C7',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  outdatedBannerText: {
+    fontSize: 12,
+    color: '#92400E',
+    lineHeight: 16,
+  },
+  errorBanner: {
+    backgroundColor: '#FEF2F2',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
+  errorBannerText: {
+    fontSize: 12,
+    color: '#DC2626',
+    lineHeight: 16,
+  },
+  analyzingContainer: {
+    paddingVertical: 20,
+    alignItems: 'center',
+    gap: 10,
+  },
+  analyzingText: {
+    fontSize: 13,
+    color: '#2563EB',
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  notAnalyzedContainer: {
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  notAnalyzedText: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  analyzeActionBtn: {
+    backgroundColor: '#2563EB',
+    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+  },
+  analyzeActionBtnText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  analysisContent: {
+    gap: 14,
+  },
+  extractedGrid: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    gap: 6,
+  },
+  extractedRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  extractedKey: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  extractedVal: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0F172A',
+    maxWidth: '65%',
+    textAlign: 'right',
+  },
+  skillsSection: {
+    marginTop: 4,
+  },
+  skillSectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 8,
+  },
+  noSkillsText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontStyle: 'italic',
+  },
+  skillChipsWrapper: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  requiredSkillChip: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  requiredSkillText: {
+    fontSize: 12,
+    color: '#1E40AF',
+    fontWeight: '600',
+  },
+  preferredSkillChip: {
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  preferredSkillText: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  listSection: {
+    marginTop: 4,
+  },
+  listSectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 6,
+  },
+  bulletRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 4,
+    gap: 6,
+  },
+  bulletPoint: {
+    fontSize: 14,
+    color: '#2563EB',
+    lineHeight: 18,
+  },
+  bulletText: {
+    fontSize: 13,
+    color: '#334155',
+    lineHeight: 18,
+    flex: 1,
+  },
+  analyzedDate: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 6,
+    textAlign: 'right',
+  },
+  /* Original JD styles */
   jdHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',

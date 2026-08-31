@@ -1,5 +1,5 @@
 import { getDatabase } from '../database';
-import { CreateJobInput, Job, JobStatus, UpdateJobInput } from '@/types/job';
+import { AnalysisStatus, CreateJobInput, Job, JobAnalysis, JobStatus, UpdateJobInput } from '@/types/job';
 
 interface JobRow {
   id: string;
@@ -12,11 +12,23 @@ interface JobRow {
   source: string;
   source_url: string;
   status: string;
+  analysis_status?: string;
+  analysis_json?: string | null;
+  analysis_updated_at?: string | null;
   created_at: string;
   updated_at: string;
 }
 
 function mapRowToJob(row: JobRow): Job {
+  let parsedAnalysis: JobAnalysis | null = null;
+  if (row.analysis_json) {
+    try {
+      parsedAnalysis = JSON.parse(row.analysis_json) as JobAnalysis;
+    } catch {
+      parsedAnalysis = null;
+    }
+  }
+
   return {
     id: row.id,
     company: row.company,
@@ -28,6 +40,8 @@ function mapRowToJob(row: JobRow): Job {
     source: row.source || undefined,
     sourceUrl: row.source_url || undefined,
     status: row.status as JobStatus,
+    analysisStatus: (row.analysis_status as AnalysisStatus) || 'Not analyzed',
+    analysis: parsedAnalysis,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -40,7 +54,7 @@ export const jobRepository = {
   async getJobs(): Promise<Job[]> {
     const db = await getDatabase();
     const rows = await db.getAllAsync<JobRow>(
-      'SELECT id, company, role, location, job_description, application_email, salary, source, source_url, status, created_at, updated_at FROM jobs ORDER BY created_at DESC;'
+      'SELECT id, company, role, location, job_description, application_email, salary, source, source_url, status, analysis_status, analysis_json, analysis_updated_at, created_at, updated_at FROM jobs ORDER BY created_at DESC;'
     );
     return rows.map(mapRowToJob);
   },
@@ -51,7 +65,7 @@ export const jobRepository = {
   async getRecentJobs(limit = 3): Promise<Job[]> {
     const db = await getDatabase();
     const rows = await db.getAllAsync<JobRow>(
-      'SELECT id, company, role, location, job_description, application_email, salary, source, source_url, status, created_at, updated_at FROM jobs ORDER BY created_at DESC LIMIT ?;',
+      'SELECT id, company, role, location, job_description, application_email, salary, source, source_url, status, analysis_status, analysis_json, analysis_updated_at, created_at, updated_at FROM jobs ORDER BY created_at DESC LIMIT ?;',
       limit
     );
     return rows.map(mapRowToJob);
@@ -63,7 +77,7 @@ export const jobRepository = {
   async getJob(id: string): Promise<Job | null> {
     const db = await getDatabase();
     const row = await db.getFirstAsync<JobRow>(
-      'SELECT id, company, role, location, job_description, application_email, salary, source, source_url, status, created_at, updated_at FROM jobs WHERE id = ?;',
+      'SELECT id, company, role, location, job_description, application_email, salary, source, source_url, status, analysis_status, analysis_json, analysis_updated_at, created_at, updated_at FROM jobs WHERE id = ?;',
       id
     );
     return row ? mapRowToJob(row) : null;
@@ -76,11 +90,13 @@ export const jobRepository = {
     const db = await getDatabase();
     const id = input.id || Date.now().toString();
     const status = input.status || 'Draft';
+    const analysisStatus = input.analysisStatus || 'Not analyzed';
+    const analysisJson = input.analysis ? JSON.stringify(input.analysis) : null;
     const now = new Date().toISOString();
 
     await db.runAsync(
-      `INSERT INTO jobs (id, company, role, location, job_description, application_email, salary, source, source_url, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+      `INSERT INTO jobs (id, company, role, location, job_description, application_email, salary, source, source_url, status, analysis_status, analysis_json, analysis_updated_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
       id,
       input.company || '',
       input.role || '',
@@ -91,6 +107,9 @@ export const jobRepository = {
       input.source || '',
       input.sourceUrl || '',
       status,
+      analysisStatus,
+      analysisJson,
+      input.analysis ? now : null,
       now,
       now
     );
@@ -106,6 +125,8 @@ export const jobRepository = {
       source: input.source,
       sourceUrl: input.sourceUrl,
       status,
+      analysisStatus,
+      analysis: input.analysis,
       createdAt: now,
       updatedAt: now,
     };
@@ -113,6 +134,7 @@ export const jobRepository = {
 
   /**
    * Updates an existing job posting in SQLite.
+   * If the raw jobDescription is updated, marks previous analysis as 'Outdated'.
    */
   async updateJob(id: string, updates: UpdateJobInput): Promise<void> {
     const db = await getDatabase();
@@ -132,6 +154,18 @@ export const jobRepository = {
     const source = updates.source !== undefined ? updates.source : current.source || '';
     const sourceUrl = updates.sourceUrl !== undefined ? updates.sourceUrl : current.sourceUrl || '';
     const status = updates.status !== undefined ? updates.status : current.status;
+
+    // Check if jobDescription was changed
+    let analysisStatus =
+      updates.analysisStatus !== undefined ? updates.analysisStatus : current.analysisStatus;
+    if (
+      updates.jobDescription !== undefined &&
+      updates.jobDescription !== current.jobDescription &&
+      current.analysisStatus === 'Analyzed'
+    ) {
+      analysisStatus = 'Outdated';
+    }
+
     const now = new Date().toISOString();
 
     await db.runAsync(
@@ -145,6 +179,7 @@ export const jobRepository = {
          source = ?,
          source_url = ?,
          status = ?,
+         analysis_status = ?,
          updated_at = ?
        WHERE id = ?;`,
       company,
@@ -156,6 +191,34 @@ export const jobRepository = {
       source,
       sourceUrl,
       status,
+      analysisStatus,
+      now,
+      id
+    );
+  },
+
+  /**
+   * Updates the analysis result and status for a job in SQLite.
+   */
+  async updateJobAnalysis(
+    id: string,
+    status: AnalysisStatus,
+    analysis?: JobAnalysis | null
+  ): Promise<void> {
+    const db = await getDatabase();
+    const analysisJson = analysis ? JSON.stringify(analysis) : null;
+    const now = new Date().toISOString();
+
+    await db.runAsync(
+      `UPDATE jobs SET
+         analysis_status = ?,
+         analysis_json = ?,
+         analysis_updated_at = ?,
+         updated_at = ?
+       WHERE id = ?;`,
+      status,
+      analysisJson,
+      analysis ? now : null,
       now,
       id
     );
