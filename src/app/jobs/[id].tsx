@@ -13,9 +13,12 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 
 import { jobRepository } from '@/database/repositories/jobRepository';
+import { profileRepository } from '@/database/repositories/profileRepository';
 import { jdAnalyzer } from '@/services/gemini/jdAnalyzer';
 import { GeminiError } from '@/services/gemini/client';
+import { matchingEngine } from '@/services/matching/matchingEngine';
 import { AnalysisStatus, JOB_STATUSES, Job, JobStatus } from '@/types/job';
+import { MatchResult, MatchScoreLabel } from '@/types/matching';
 
 const STATUS_COLORS: Record<JobStatus, { bg: string; text: string; border: string }> = {
   Draft: { bg: '#F1F5F9', text: '#475569', border: '#CBD5E1' },
@@ -38,6 +41,14 @@ const ANALYSIS_STATUS_BADGES: Record<
   Outdated: { bg: '#FEF3C7', text: '#D97706', border: '#FDE68A' },
 };
 
+const SCORE_BADGES: Record<MatchScoreLabel, { bg: string; text: string; border: string }> = {
+  'Low match': { bg: '#FEE2E2', text: '#DC2626', border: '#FECACA' },
+  'Partial match': { bg: '#FEF3C7', text: '#D97706', border: '#FDE68A' },
+  'Good match': { bg: '#EFF6FF', text: '#2563EB', border: '#BFDBFE' },
+  'Strong match': { bg: '#EDE9FE', text: '#7C3AED', border: '#DDD6FE' },
+  'Very strong match': { bg: '#DCFCE7', text: '#16A34A', border: '#BBF7D0' },
+};
+
 export default function JobDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
@@ -46,6 +57,9 @@ export default function JobDetailsScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+
+  const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
+  const [isMatching, setIsMatching] = useState(false);
 
   const loadJob = async () => {
     if (!id) return;
@@ -122,13 +136,15 @@ export default function JobDetailsScreen() {
               ...prev,
               analysisStatus: 'Analyzed',
               analysis: result,
-              // If company or role was not previously filled in, auto-fill from analysis if present
               company: prev.company || result.company || '',
               role: prev.role || result.role || '',
               location: prev.location || result.location || '',
             }
           : null
       );
+
+      // Invalidate existing match result so user recalculates with new analysis
+      setMatchResult(null);
     } catch (error: any) {
       console.error('JD Analysis error:', error);
       const message =
@@ -139,6 +155,25 @@ export default function JobDetailsScreen() {
       setJob((prev) => (prev ? { ...prev, analysisStatus: 'Failed' } : null));
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  const handleCalculateMatch = async () => {
+    if (!job?.analysis) return;
+
+    try {
+      setIsMatching(true);
+      // Load candidate profile from SQLite (Single Source of Truth)
+      const profile = await profileRepository.getProfile();
+
+      // Deterministic local matching
+      const result = matchingEngine.match(profile, job.analysis);
+      setMatchResult(result);
+    } catch (error) {
+      console.error('Matching calculation error:', error);
+      Alert.alert('Error', 'Failed to calculate profile match.');
+    } finally {
+      setIsMatching(false);
     }
   };
 
@@ -296,7 +331,7 @@ export default function JobDetailsScreen() {
         </View>
 
         {/* ===================================================
-            JD ANALYSIS SECTION (Gemini Integration)
+            SECTION 1: JD ANALYSIS (Gemini Integration)
             =================================================== */}
         <View style={styles.card}>
           <View style={styles.analysisHeader}>
@@ -353,7 +388,7 @@ export default function JobDetailsScreen() {
               </Text>
             </View>
           ) : !job.analysis ? (
-            /* State: Not Analyzed or Failed without previous analysis */
+            /* State: Not Analyzed */
             <View style={styles.notAnalyzedContainer}>
               <Text style={styles.notAnalyzedText}>
                 Use Gemini to extract required skills, preferred technologies, and key responsibilities from this Job Description.
@@ -366,7 +401,7 @@ export default function JobDetailsScreen() {
               </TouchableOpacity>
             </View>
           ) : (
-            /* State: Analyzed (display structured data) */
+            /* State: Analyzed */
             <View style={styles.analysisContent}>
               {/* Extracted Details Grid */}
               <View style={styles.extractedGrid}>
@@ -467,7 +502,240 @@ export default function JobDetailsScreen() {
           )}
         </View>
 
-        {/* Complete Raw Job Description */}
+        {/* ===================================================
+            SECTION 2: PROFILE MATCH ANALYSIS (Deterministic)
+            =================================================== */}
+        <View style={styles.card}>
+          <View style={styles.analysisHeader}>
+            <View style={styles.analysisTitleRow}>
+              <Text style={styles.analysisTitle}>🎯 Profile Match</Text>
+              {matchResult && (
+                <View
+                  style={[
+                    styles.analysisBadge,
+                    {
+                      backgroundColor: SCORE_BADGES[matchResult.scoreLabel].bg,
+                      borderColor: SCORE_BADGES[matchResult.scoreLabel].border,
+                    },
+                  ]}>
+                  <Text
+                    style={[
+                      styles.analysisBadgeText,
+                      { color: SCORE_BADGES[matchResult.scoreLabel].text },
+                    ]}>
+                    {matchResult.overallScore}% — {matchResult.scoreLabel}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {matchResult && (
+              <TouchableOpacity
+                style={styles.reanalyzeBtn}
+                onPress={handleCalculateMatch}
+                disabled={isMatching}>
+                <Text style={styles.reanalyzeText}>
+                  {isMatching ? 'Calculating...' : '↻ Recalculate'}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {!job.analysis ? (
+            /* Requirement: Analyze JD First */
+            <View style={styles.notAnalyzedContainer}>
+              <Text style={styles.notAnalyzedText}>
+                Analyze the Job Description with Gemini first to enable Profile Matching.
+              </Text>
+            </View>
+          ) : isMatching ? (
+            <View style={styles.analyzingContainer}>
+              <ActivityIndicator size="small" color="#2563EB" />
+              <Text style={styles.analyzingText}>Comparing with candidate profile...</Text>
+            </View>
+          ) : !matchResult ? (
+            /* Prompt to Analyze Match */
+            <View style={styles.notAnalyzedContainer}>
+              <Text style={styles.notAnalyzedText}>
+                Compare this job&apos;s requirements with your candidate profile to see skill overlaps, missing qualifications, and relevant experiences.
+              </Text>
+              <TouchableOpacity
+                style={styles.analyzeActionBtn}
+                onPress={handleCalculateMatch}
+                activeOpacity={0.8}>
+                <Text style={styles.analyzeActionBtnText}>🎯 Analyze Match</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            /* Display Detailed Match Results */
+            <View style={styles.analysisContent}>
+              {/* Overall Score Banner */}
+              <View
+                style={[
+                  styles.overallScoreBanner,
+                  {
+                    backgroundColor: SCORE_BADGES[matchResult.scoreLabel].bg,
+                    borderColor: SCORE_BADGES[matchResult.scoreLabel].border,
+                  },
+                ]}>
+                <View style={styles.scoreNumberCol}>
+                  <Text
+                    style={[
+                      styles.scoreBigNumber,
+                      { color: SCORE_BADGES[matchResult.scoreLabel].text },
+                    ]}>
+                    {matchResult.overallScore}%
+                  </Text>
+                  <Text
+                    style={[
+                      styles.scoreLabelText,
+                      { color: SCORE_BADGES[matchResult.scoreLabel].text },
+                    ]}>
+                    {matchResult.scoreLabel}
+                  </Text>
+                </View>
+                <View style={styles.scoreStatsCol}>
+                  <Text style={styles.scoreStatLine}>
+                    Required Skills: {matchResult.requiredSkills.matched.length}/
+                    {matchResult.requiredSkills.matched.length +
+                      matchResult.requiredSkills.missing.length}
+                  </Text>
+                  <Text style={styles.scoreStatLine}>
+                    Preferred Skills: {matchResult.preferredSkills.matched.length}/
+                    {matchResult.preferredSkills.matched.length +
+                      matchResult.preferredSkills.missing.length}
+                  </Text>
+                  <Text style={styles.scoreStatLine}>
+                    Relevant Experiences: {matchResult.relevantExperiences.length}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Required Skills Match List */}
+              <View style={styles.skillsSection}>
+                <Text style={styles.skillSectionTitle}>
+                  Required Skills ({matchResult.requiredSkills.matchPercentage}% match)
+                </Text>
+                <View style={styles.skillItemGrid}>
+                  {matchResult.requiredSkills.matched.map((item, idx) => (
+                    <View key={`req-m-${idx}`} style={styles.matchedSkillRow}>
+                      <Text style={styles.checkIcon}>✓</Text>
+                      <Text style={styles.matchedSkillName}>{item.jdSkill}</Text>
+                    </View>
+                  ))}
+                  {matchResult.requiredSkills.missing.map((item, idx) => (
+                    <View key={`req-x-${idx}`} style={styles.missingSkillRow}>
+                      <Text style={styles.crossIcon}>✕</Text>
+                      <Text style={styles.missingSkillName}>{item.jdSkill}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+
+              {/* Preferred Skills Match List */}
+              {(matchResult.preferredSkills.matched.length > 0 ||
+                matchResult.preferredSkills.missing.length > 0) && (
+                <View style={styles.skillsSection}>
+                  <Text style={styles.skillSectionTitle}>
+                    Preferred Skills ({matchResult.preferredSkills.matchPercentage}% match)
+                  </Text>
+                  <View style={styles.skillItemGrid}>
+                    {matchResult.preferredSkills.matched.map((item, idx) => (
+                      <View key={`pref-m-${idx}`} style={styles.matchedSkillRow}>
+                        <Text style={styles.checkIcon}>✓</Text>
+                        <Text style={styles.matchedSkillName}>{item.jdSkill}</Text>
+                      </View>
+                    ))}
+                    {matchResult.preferredSkills.missing.map((item, idx) => (
+                      <View key={`pref-x-${idx}`} style={styles.missingPrefSkillRow}>
+                        <Text style={styles.crossIconMuted}>✕</Text>
+                        <Text style={styles.missingPrefSkillName}>{item.jdSkill}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* Relevant Work Experience */}
+              <View style={styles.listSection}>
+                <Text style={styles.listSectionTitle}>
+                  Relevant Experience ({matchResult.relevantExperiences.length})
+                </Text>
+                {matchResult.relevantExperiences.length === 0 ? (
+                  <Text style={styles.noSkillsText}>
+                    No work experience entries strongly matched this JD.
+                  </Text>
+                ) : (
+                  matchResult.relevantExperiences.map((exp) => (
+                    <View key={exp.experienceId} style={styles.relevanceCard}>
+                      <View style={styles.relevanceHeader}>
+                        <View style={styles.relevanceTitleArea}>
+                          <Text style={styles.relevanceName}>{exp.company}</Text>
+                          <Text style={styles.relevanceRole}>{exp.jobTitle}</Text>
+                        </View>
+                        <View style={styles.relevanceScoreBadge}>
+                          <Text style={styles.relevanceScoreText}>{exp.score}% match</Text>
+                        </View>
+                      </View>
+                      {exp.matchedSkills.length > 0 && (
+                        <View style={styles.matchedChipsRow}>
+                          <Text style={styles.chipsLabel}>Matched Tech: </Text>
+                          {exp.matchedSkills.map((s, idx) => (
+                            <View key={idx} style={styles.miniMatchedChip}>
+                              <Text style={styles.miniMatchedText}>{s}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  ))
+                )}
+              </View>
+
+              {/* Relevant Projects */}
+              <View style={styles.listSection}>
+                <Text style={styles.listSectionTitle}>
+                  Relevant Projects ({matchResult.relevantProjects.length})
+                </Text>
+                {matchResult.relevantProjects.length === 0 ? (
+                  <Text style={styles.noSkillsText}>
+                    No projects strongly matched this JD.
+                  </Text>
+                ) : (
+                  matchResult.relevantProjects.map((proj) => (
+                    <View key={proj.projectId} style={styles.relevanceCard}>
+                      <View style={styles.relevanceHeader}>
+                        <View style={styles.relevanceTitleArea}>
+                          <Text style={styles.relevanceName}>{proj.projectName}</Text>
+                          {proj.projectTypeOrDomain ? (
+                            <Text style={styles.relevanceRole}>{proj.projectTypeOrDomain}</Text>
+                          ) : null}
+                        </View>
+                        <View style={styles.relevanceScoreBadge}>
+                          <Text style={styles.relevanceScoreText}>{proj.score}% match</Text>
+                        </View>
+                      </View>
+                      {proj.matchedSkills.length > 0 && (
+                        <View style={styles.matchedChipsRow}>
+                          <Text style={styles.chipsLabel}>Matched Tech: </Text>
+                          {proj.matchedSkills.map((s, idx) => (
+                            <View key={idx} style={styles.miniMatchedChip}>
+                              <Text style={styles.miniMatchedText}>{s}</Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+                    </View>
+                  ))
+                )}
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* ===================================================
+            SECTION 3: ORIGINAL RAW JOB DESCRIPTION (Preserved)
+            =================================================== */}
         <View style={styles.card}>
           <View style={styles.jdHeader}>
             <Text style={styles.jdTitle}>Original Job Description</Text>
@@ -684,7 +952,7 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     marginTop: 14,
   },
-  /* Analysis styles */
+  /* Analysis common styles */
   analysisHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -695,6 +963,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+    flex: 1,
   },
   analysisTitle: {
     fontSize: 16,
@@ -887,6 +1156,166 @@ const styles = StyleSheet.create({
     color: '#94A3B8',
     marginTop: 6,
     textAlign: 'right',
+  },
+  /* Matching Section Styles */
+  overallScoreBanner: {
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  scoreNumberCol: {
+    alignItems: 'flex-start',
+  },
+  scoreBigNumber: {
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  scoreLabelText: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginTop: 2,
+  },
+  scoreStatsCol: {
+    gap: 3,
+  },
+  scoreStatLine: {
+    fontSize: 12,
+    color: '#475569',
+    fontWeight: '500',
+  },
+  skillItemGrid: {
+    gap: 6,
+  },
+  matchedSkillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 8,
+  },
+  checkIcon: {
+    fontSize: 13,
+    color: '#16A34A',
+    fontWeight: '800',
+  },
+  matchedSkillName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#166534',
+  },
+  missingSkillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 8,
+  },
+  crossIcon: {
+    fontSize: 13,
+    color: '#DC2626',
+    fontWeight: '800',
+  },
+  missingSkillName: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#991B1B',
+  },
+  missingPrefSkillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 8,
+  },
+  crossIconMuted: {
+    fontSize: 13,
+    color: '#94A3B8',
+    fontWeight: '700',
+  },
+  missingPrefSkillName: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  relevanceCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    marginBottom: 8,
+  },
+  relevanceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  relevanceTitleArea: {
+    flex: 1,
+    marginRight: 8,
+  },
+  relevanceName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  relevanceRole: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 1,
+  },
+  relevanceScoreBadge: {
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  relevanceScoreText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2563EB',
+  },
+  matchedChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  chipsLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  miniMatchedChip: {
+    backgroundColor: '#DCFCE7',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  miniMatchedText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#166534',
   },
   /* Original JD styles */
   jdHeader: {
