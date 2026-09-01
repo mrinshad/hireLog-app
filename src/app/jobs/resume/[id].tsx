@@ -25,9 +25,9 @@ import { profileRepository } from '@/database/repositories/profileRepository';
 import { resumeRepository } from '@/database/repositories/resumeRepository';
 import { jdAnalyzer } from '@/services/gemini/jdAnalyzer';
 import { errorLogger } from '@/services/logging/errorLogger';
-import { CompilerError, latexCompiler } from '@/services/latex/compiler';
 import { latexRenderer } from '@/services/latex/latexRenderer';
 import { localPdfGenerator } from '@/services/pdf/pdfGenerator';
+import { pdfViewerService } from '@/services/pdf/pdfViewerService';
 import { ResumeVersion } from '@/services/latex/types';
 import { matchingEngine } from '@/services/matching/matchingEngine';
 import { resumeCustomizer } from '@/services/resume/resumeCustomizer';
@@ -220,31 +220,15 @@ export default function ResumePreviewScreen() {
         'master-v1'
       );
 
-      setGenerationStep('Compiling PDF document on-device...');
+      setGenerationStep('Generating PDF document on-device...');
       try {
-        let pdfPath: string | null = null;
-        try {
-          const res = await localPdfGenerator.generatePdfFromResume(
-            tailored,
-            job.company || job.id,
-            newVersion.versionNumber
-          );
-          pdfPath = res.pdfPath;
-        } catch (localErr) {
-          await errorLogger.logError('handleGenerateNewVersion.localPdfGenerator', localErr, { jobId: job.id });
-          console.warn('Local PDF generation fallback:', localErr);
-        }
+        const res = await localPdfGenerator.generatePdfFromResume(
+          tailored,
+          job.company || job.id,
+          newVersion.versionNumber
+        );
 
-        if (!pdfPath) {
-          const res = await latexCompiler.compileToPdf(
-            latexSource,
-            job.id,
-            newVersion.id,
-            tailored
-          );
-          pdfPath = res.pdfPath;
-        }
-
+        const pdfPath = res.pdfPath;
         await resumeRepository.updateResumePdf(newVersion.id, pdfPath, 'Generated', null);
         newVersion.pdfPath = pdfPath;
         newVersion.generationStatus = 'Generated';
@@ -255,10 +239,7 @@ export default function ResumePreviewScreen() {
 
         AppToast.show(`Resume version v${newVersion.versionNumber} ready`, 'success');
       } catch (compileErr: any) {
-        const errorLog =
-          compileErr instanceof CompilerError
-            ? compileErr.compilerLog
-            : compileErr.message || 'Unknown compilation error';
+        const errorLog = compileErr.message || 'Unknown PDF generation error';
 
         await resumeRepository.updateResumePdf(
           newVersion.id,
@@ -358,20 +339,7 @@ export default function ResumePreviewScreen() {
         selectedVersion.pdfPath = targetPath;
       }
 
-      const isAvailable = await Sharing.isAvailableAsync();
-      if (!isAvailable) {
-        AppDialog.alert(
-          'App Selector Unavailable',
-          'Document viewing is not available on this platform.'
-        );
-        return;
-      }
-
-      await Sharing.shareAsync(targetPath, {
-        mimeType: 'application/pdf',
-        dialogTitle: 'Open With...',
-        UTI: 'com.adobe.pdf',
-      });
+      await pdfViewerService.openPdf(targetPath);
     } catch (error: any) {
       await errorLogger.logError('ResumePreview.handleOpenWith', error, {
         jobId: job?.id,
@@ -379,8 +347,8 @@ export default function ResumePreviewScreen() {
       });
       console.error('Error opening PDF:', error);
       AppDialog.error(
-        'PDF Generation Failed',
-        error.message || 'Could not generate PDF on device.'
+        'PDF Viewer Failed',
+        error.message || 'Could not open PDF viewer on device.'
       );
     }
   };

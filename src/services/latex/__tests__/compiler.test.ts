@@ -16,36 +16,23 @@ export async function runCompilerTests(): Promise<{ total: number; passed: numbe
 
   console.log('\n--- Running LaTeX Compiler & PDF Service Tests ---');
 
-  // Test 1: Empty LaTeX source throws CompilerError
-  try {
-    await latexCompiler.compileToPdf('', 'job-1', 'v1');
-    assert(false, 'Test 1: Empty LaTeX source should reject');
-  } catch (error: any) {
-    assert(
-      error instanceof CompilerError && error.message.includes('LaTeX source is empty'),
-      'Test 1: Empty LaTeX source is caught and throws clean CompilerError'
-    );
-  }
-
-  // Test 2: Whitespace only throws CompilerError
-  try {
-    await latexCompiler.compileToPdf('   \n  ', 'job-1', 'v1');
-    assert(false, 'Test 2: Whitespace-only LaTeX source should reject');
-  } catch (error: any) {
-    assert(
-      error instanceof CompilerError,
-      'Test 2: Whitespace-only LaTeX source is rejected with CompilerError'
-    );
-  }
-
-  // Test 3: CompilerError structure preserves logs
+  // Test 1: CompilerError structure preserves logs
   {
     const err = new CompilerError('Compilation failed', '! Undefined control sequence \n l.25 \\brokenCommand');
     assert(
       err.message === 'Compilation failed' &&
         err.compilerLog.includes('\\brokenCommand') &&
         err.name === 'CompilerError',
-      'Test 3: CompilerError structure preserves detailed logs for debugging without exposing raw logs in main message'
+      'Test 1: CompilerError structure preserves detailed logs for debugging'
+    );
+  }
+
+  // Test 2: Error instance conforms to standard Error
+  {
+    const err = new CompilerError('On-device error');
+    assert(
+      err instanceof Error && err.name === 'CompilerError',
+      'Test 2: CompilerError extends Error correctly'
     );
   }
 

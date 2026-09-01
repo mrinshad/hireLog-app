@@ -29,7 +29,6 @@ import { resumeRepository } from '@/database/repositories/resumeRepository';
 import { emailComposerService } from '@/services/email/emailComposerService';
 import { emailGenerator } from '@/services/gemini/emailGenerator';
 import { GeminiError } from '@/services/gemini/client';
-import { latexCompiler } from '@/services/latex/compiler';
 import { localPdfGenerator } from '@/services/pdf/pdfGenerator';
 import { ResumeVersion } from '@/services/latex/types';
 import { errorLogger } from '@/services/logging/errorLogger';
@@ -232,31 +231,42 @@ export default function EmailComposerScreen() {
       setIsCompilingPdf(true);
       AppToast.show('Generating resume PDF for attachment...', 'info');
 
-      let compiled: { pdfPath: string; sizeBytes: number } | null = null;
-
-      // Try local on-device generation from resumeJson
+      let resumeDataToRender: CustomizedResume | null = null;
       if (latestResume.resumeJson) {
         try {
-          const parsed = JSON.parse(latestResume.resumeJson) as CustomizedResume;
-          compiled = await localPdfGenerator.generatePdfFromResume(
-            parsed,
-            job?.company || 'hireFlow',
-            latestResume.versionNumber
-          );
-        } catch (localErr) {
-          console.warn('Local PDF generation fallback:', localErr);
-        }
+          resumeDataToRender = JSON.parse(latestResume.resumeJson) as CustomizedResume;
+        } catch {}
       }
 
-      if (!compiled && latestResume.latexSource) {
-        compiled = await latexCompiler.compileToPdf(
-          latestResume.latexSource,
-          job?.company || job?.id || 'hireFlow',
-          `v${latestResume.versionNumber}`
+      if (!resumeDataToRender && profile && job) {
+        const analysis = job.analysis || {
+          company: job.company || 'Company',
+          role: job.role || 'Software Engineer',
+          location: job.location || null,
+          experienceRequirement: null,
+          educationRequirement: null,
+          salary: job.salary || null,
+          employmentType: null,
+          workMode: null,
+          applicationEmail: job.applicationEmail || null,
+          applicationUrl: job.sourceUrl || null,
+          requiredSkills: [],
+          preferredSkills: [],
+          responsibilities: [],
+          otherRequirements: [],
+          analyzedAt: new Date().toISOString(),
+        };
+        const match = job.matchResult || matchingEngine.match(profile, analysis);
+        resumeDataToRender = resumeCustomizer.customize(profile, analysis, match, job.id);
+      }
+
+      if (resumeDataToRender) {
+        const compiled = await localPdfGenerator.generatePdfFromResume(
+          resumeDataToRender,
+          job?.company || 'hireFlow',
+          latestResume.versionNumber
         );
-      }
 
-      if (compiled) {
         targetPath = compiled.pdfPath;
         await resumeRepository.updateResumePdf(latestResume.id, targetPath, 'Generated');
         setLatestResume((prev) => (prev ? { ...prev, pdfPath: targetPath } : null));
@@ -267,7 +277,7 @@ export default function EmailComposerScreen() {
         jobId: job?.id,
         resumeId: latestResume?.id,
       });
-      console.warn('Could not compile PDF for email attachment:', err);
+      console.warn('Could not generate PDF for email attachment:', err);
     } finally {
       setIsCompilingPdf(false);
     }

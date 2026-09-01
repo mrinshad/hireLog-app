@@ -334,11 +334,12 @@ export const localPdfGenerator = {
     try {
       const html = generateResumeHtml(resume);
 
-      // Render PDF on-device using native OS engine
+      // Render PDF on-device using native OS engine with base64 enabled
       const printResult = await Print.printToFileAsync({
         html,
         width: 595,
         height: 842,
+        base64: true,
       });
 
       const dir = `${FileSystem.documentDirectory}hireFlow/resumes/`;
@@ -350,18 +351,39 @@ export const localPdfGenerator = {
         await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
       }
 
-      // Copy file into hireFlow directory
-      await FileSystem.copyAsync({
-        from: printResult.uri,
-        to: targetFilePath,
-      });
+      // Write PDF directly to hireFlow storage using base64 (avoids scoped storage cache copy errors on Android)
+      if (printResult.base64) {
+        await FileSystem.writeAsStringAsync(targetFilePath, printResult.base64, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
 
-      const fileInfo = await FileSystem.getInfoAsync(targetFilePath);
+        const fileInfo = await FileSystem.getInfoAsync(targetFilePath);
 
-      return {
-        pdfPath: targetFilePath,
-        sizeBytes: (fileInfo as any).size || 25000,
-      };
+        return {
+          pdfPath: targetFilePath,
+          sizeBytes: (fileInfo as any).size || Math.round(printResult.base64.length * 0.75),
+        };
+      }
+
+      // Fallback: try copyAsync, or use printResult.uri directly
+      try {
+        await FileSystem.copyAsync({
+          from: printResult.uri,
+          to: targetFilePath,
+        });
+
+        const fileInfo = await FileSystem.getInfoAsync(targetFilePath);
+        return {
+          pdfPath: targetFilePath,
+          sizeBytes: (fileInfo as any).size || 25000,
+        };
+      } catch (copyErr) {
+        console.warn('copyAsync fallback to direct print URI:', copyErr);
+        return {
+          pdfPath: printResult.uri,
+          sizeBytes: 25000,
+        };
+      }
     } catch (err: any) {
       await errorLogger.logError('localPdfGenerator.generatePdfFromResume', err, {
         companyOrJobId,

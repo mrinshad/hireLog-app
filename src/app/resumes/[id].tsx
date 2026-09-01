@@ -22,8 +22,8 @@ import { StatusBadge } from '@/components/common/StatusBadge';
 import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
 import { AppDialog, AppToast } from '@/context/DialogContext';
 import { resumeRepository } from '@/database/repositories/resumeRepository';
-import { latexCompiler } from '@/services/latex/compiler';
 import { localPdfGenerator } from '@/services/pdf/pdfGenerator';
+import { pdfViewerService } from '@/services/pdf/pdfViewerService';
 import { ResumeVersion } from '@/services/latex/types';
 import { formatRelativeDate } from '@/services/tracking/trackingHelpers';
 import { JobStatus } from '@/types/job';
@@ -126,25 +126,12 @@ export default function ResumeDetailsScreen() {
         );
       }
 
-      const isAvailable = await Sharing.isAvailableAsync();
-      if (!isAvailable) {
-        AppDialog.alert(
-          'App Selector Unavailable',
-          'Document viewing is not available on this platform.'
-        );
-        return;
-      }
-
-      await Sharing.shareAsync(targetPath, {
-        mimeType: 'application/pdf',
-        dialogTitle: 'Open With...',
-        UTI: 'com.adobe.pdf',
-      });
+      await pdfViewerService.openPdf(targetPath);
     } catch (error: any) {
       console.error('Error opening PDF:', error);
       AppDialog.error(
-        'PDF Generation Failed',
-        error.message || 'Could not generate PDF file on device.'
+        'PDF Viewer Failed',
+        error.message || 'Could not open PDF viewer on device.'
       );
     }
   };

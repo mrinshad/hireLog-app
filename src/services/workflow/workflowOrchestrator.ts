@@ -5,9 +5,9 @@ import { resumeRepository } from '@/database/repositories/resumeRepository';
 import { emailComposerService } from '@/services/email/emailComposerService';
 import { emailGenerator } from '@/services/gemini/emailGenerator';
 import { jdAnalyzer } from '@/services/gemini/jdAnalyzer';
-import { CompilerError, latexCompiler } from '@/services/latex/compiler';
 import { latexRenderer } from '@/services/latex/latexRenderer';
 import { localPdfGenerator } from '@/services/pdf/pdfGenerator';
+import { errorLogger } from '@/services/logging/errorLogger';
 import { matchingEngine } from '@/services/matching/matchingEngine';
 import { resumeCustomizer } from '@/services/resume/resumeCustomizer';
 import { resumeValidator } from '@/services/resume/resumeValidator';
@@ -209,18 +209,11 @@ export const workflowOrchestrator = {
             null
           );
         } catch (localErr: any) {
-          console.warn('Local PDF generation fallback:', localErr.message || localErr);
-          // Fallback to remote LaTeX compiler if local engine fails
-          try {
-            const { pdfPath } = await latexCompiler.compileToPdf(
-              latexSource,
-              job.company || jobId,
-              newVersion.id
-            );
-            await resumeRepository.updateResumePdf(newVersion.id, pdfPath, 'Generated', null);
-          } catch {
-            await resumeRepository.updateResumePdf(newVersion.id, null, 'Generated', 'In-app viewer ready');
-          }
+          await errorLogger.logError('workflowOrchestrator.generatePdf', localErr, {
+            jobId,
+            versionId: newVersion.id,
+          });
+          await resumeRepository.updateResumePdf(newVersion.id, null, 'Generated', 'In-app preview ready');
         }
 
         if (!completedSteps.includes('GENERATING_RESUME')) {
