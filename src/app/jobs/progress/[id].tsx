@@ -145,7 +145,6 @@ export default function ApplicationProgressScreen() {
     <SafeAreaView style={styles.safeArea}>
       <AppHeader
         title="Preparing Application"
-        subtitle={job?.company || 'Automated Pipeline'}
         showBack
       />
 

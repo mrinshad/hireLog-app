@@ -246,7 +246,6 @@ export default function ApiKeysScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <AppHeader
           title="AI & API Keys"
-          subtitle="Dynamic Models & Gemini Configuration"
           showBack
           onBack={() => router.back()}
         />

@@ -16,6 +16,7 @@ import Feather from '@expo/vector-icons/Feather';
 
 import { AppHeader } from '@/components/common/AppHeader';
 import { Card } from '@/components/common/Card';
+import { FadeInView } from '@/components/common/FadeInView';
 import { DestructiveButton, PrimaryButton, SecondaryButton } from '@/components/common/Buttons';
 import { ResumeDocumentSheet } from '@/components/resume/ResumeDocumentSheet';
 import { StatusBadge } from '@/components/common/StatusBadge';
@@ -200,7 +201,6 @@ export default function ResumeDetailsScreen() {
     <SafeAreaView style={styles.safeArea}>
       <AppHeader
         title={`Resume v${resumeVersion.versionNumber}`}
-        subtitle={resumeVersion.targetCompany}
         showBack
       />
 

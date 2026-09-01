@@ -12,6 +12,7 @@ import Feather from '@expo/vector-icons/Feather';
 
 import { AppHeader } from '@/components/common/AppHeader';
 import { EmptyState } from '@/components/common/EmptyState';
+import { FadeInView } from '@/components/common/FadeInView';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { PrimaryButton } from '@/components/common/Buttons';
 import { Colors, Radius, Spacing, Typography } from '@/constants/theme';
@@ -62,7 +63,6 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safeArea}>
       <AppHeader
         title="HireLog"
-        subtitle="Application Tracker"
         showLogo={true}
         rightAction={
           <PrimaryButton
@@ -79,35 +79,37 @@ export default function HomeScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}>
         {/* Metrics Grid */}
-        <View style={styles.metricsGrid}>
-          <TouchableOpacity
-            style={[styles.metricCard, styles.metricCardPrimary]}
-            activeOpacity={0.7}
-            onPress={() => router.push('/jobs')}>
-            <Text style={[styles.metricNumber, { color: Colors.primary }]}>{metrics.total}</Text>
-            <Text style={styles.metricLabel}>Total</Text>
-          </TouchableOpacity>
+        <FadeInView delay={50}>
+          <View style={styles.metricsGrid}>
+            <TouchableOpacity
+              style={[styles.metricCard, styles.metricCardPrimary]}
+              activeOpacity={0.7}
+              onPress={() => router.push('/jobs')}>
+              <Text style={[styles.metricNumber, { color: Colors.primary }]}>{metrics.total}</Text>
+              <Text style={styles.metricLabel}>Total</Text>
+            </TouchableOpacity>
 
-          <View style={styles.metricCard}>
-            <Text style={[styles.metricNumber, { color: Colors.infoText }]}>{metrics.applied}</Text>
-            <Text style={styles.metricLabel}>Applied</Text>
-          </View>
+            <View style={styles.metricCard}>
+              <Text style={[styles.metricNumber, { color: Colors.infoText }]}>{metrics.applied}</Text>
+              <Text style={styles.metricLabel}>Applied</Text>
+            </View>
 
-          <View style={styles.metricCard}>
-            <Text style={[styles.metricNumber, { color: '#7C3AED' }]}>{metrics.interview}</Text>
-            <Text style={styles.metricLabel}>Interview</Text>
-          </View>
+            <View style={styles.metricCard}>
+              <Text style={[styles.metricNumber, { color: '#7C3AED' }]}>{metrics.interview}</Text>
+              <Text style={styles.metricLabel}>Interview</Text>
+            </View>
 
-          <View style={styles.metricCard}>
-            <Text style={[styles.metricNumber, { color: Colors.successText }]}>{metrics.offer}</Text>
-            <Text style={styles.metricLabel}>Offer</Text>
-          </View>
+            <View style={styles.metricCard}>
+              <Text style={[styles.metricNumber, { color: Colors.successText }]}>{metrics.offer}</Text>
+              <Text style={styles.metricLabel}>Offer</Text>
+            </View>
 
-          <View style={styles.metricCard}>
-            <Text style={[styles.metricNumber, { color: Colors.errorText }]}>{metrics.rejected}</Text>
-            <Text style={styles.metricLabel}>Rejected</Text>
+            <View style={styles.metricCard}>
+              <Text style={[styles.metricNumber, { color: Colors.errorText }]}>{metrics.rejected}</Text>
+              <Text style={styles.metricLabel}>Rejected</Text>
+            </View>
           </View>
-        </View>
+        </FadeInView>
 
         {/* Recent Activity */}
         <View style={styles.sectionHeaderRow}>
@@ -116,7 +118,7 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={styles.viewAllBtn}
               onPress={() => router.push('/jobs')}>
-              <Text style={styles.viewAllText}>View All ({metrics.total})</Text>
+              <Text style={styles.viewAllText}>View All</Text>
               <Feather name="chevron-right" size={14} color={Colors.primary} />
             </TouchableOpacity>
           )}
@@ -126,39 +128,39 @@ export default function HomeScreen() {
           <EmptyState
             icon="briefcase"
             title="No applications yet"
-            description="Add your first job description to tailor your resume and track progress."
             actionLabel="Add Job"
             actionIcon="plus"
             onAction={() => router.push('/jobs/new')}
           />
         ) : (
-          recentJobs.map((job) => {
+          recentJobs.map((job, index) => {
             const dateLabel =
               job.status === 'Applied' && job.appliedAt
                 ? `Applied ${formatRelativeDate(job.appliedAt)}`
                 : formatRelativeDate(job.updatedAt);
 
             return (
-              <TouchableOpacity
-                key={job.id}
-                style={styles.jobCard}
-                activeOpacity={0.7}
-                onPress={() => router.push(`/jobs/${job.id}`)}>
-                <View style={styles.jobInfo}>
-                  <Text style={Typography.itemTitle} numberOfLines={1}>
-                    {job.role || 'Untitled Role'}
-                  </Text>
-                  <Text style={Typography.supporting} numberOfLines={1}>
-                    {job.company || 'Company not specified'}
-                    {job.location ? ` • ${job.location}` : ''}
-                  </Text>
-                </View>
+              <FadeInView key={job.id} delay={100 + index * 60}>
+                <TouchableOpacity
+                  style={styles.jobCard}
+                  activeOpacity={0.7}
+                  onPress={() => router.push(`/jobs/${job.id}`)}>
+                  <View style={styles.jobInfo}>
+                    <Text style={Typography.itemTitle} numberOfLines={1}>
+                      {job.role || 'Untitled Role'}
+                    </Text>
+                    <Text style={Typography.supporting} numberOfLines={1}>
+                      {job.company || 'Company not specified'}
+                      {job.location ? ` • ${job.location}` : ''}
+                    </Text>
+                  </View>
 
-                <View style={styles.jobEndCol}>
-                  <StatusBadge status={job.status} size="sm" />
-                  <Text style={Typography.caption}>{dateLabel}</Text>
-                </View>
-              </TouchableOpacity>
+                  <View style={styles.jobEndCol}>
+                    <StatusBadge status={job.status} size="sm" />
+                    <Text style={Typography.caption}>{dateLabel}</Text>
+                  </View>
+                </TouchableOpacity>
+              </FadeInView>
             );
           })
         )}
@@ -188,14 +190,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.surface,
     borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: Colors.border,
     paddingVertical: Spacing.md,
     alignItems: 'center',
   },
   metricCardPrimary: {
     backgroundColor: Colors.primaryLight,
-    borderColor: Colors.primaryBorder,
   },
   metricNumber: {
     fontSize: 18,
@@ -227,8 +226,6 @@ const styles = StyleSheet.create({
   jobCard: {
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
     padding: Spacing.lg,
     marginBottom: Spacing.sm,
     flexDirection: 'row',

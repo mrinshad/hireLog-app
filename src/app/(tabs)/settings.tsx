@@ -142,7 +142,7 @@ export default function SettingsScreen() {
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <AppHeader title="Settings" subtitle="Preferences & Security Configuration" />
+        <AppHeader title="Settings" />
 
         <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
           {/* Dynamic AI & API Keys Configuration Gate */}
@@ -169,7 +169,7 @@ export default function SettingsScreen() {
                 <Text style={styles.keyHeroSub}>
                   {activeKey
                     ? `${maskKey(activeKey.apiKey)} • ${activeKey.defaultModel}`
-                    : 'Tap to configure Google Gemini API keys & AI models'}
+                    : 'No active key configured'}
                 </Text>
               </View>
               <View style={styles.chevronWrap}>
@@ -191,21 +191,11 @@ export default function SettingsScreen() {
               style={styles.profileActionRow}
               activeOpacity={0.7}
               onPress={handleOpenLoadProfile}>
-              <View style={styles.profileActionTextContainer}>
-                <Text style={Typography.itemTitle}>Load My Profile</Text>
-                <Text style={Typography.caption}>Import the saved verified candidate information</Text>
-              </View>
+              <Text style={Typography.itemTitle}>Load My Profile</Text>
               <Feather name="download" size={IconSizes.md} color={Colors.primary} />
             </TouchableOpacity>
           </Card>
 
-          {/* Privacy Note */}
-          <View style={styles.infoCard}>
-            <Feather name="shield" size={IconSizes.sm} color={Colors.primary} />
-            <Text style={styles.infoText}>
-              All your profile data, resumes, drafts, and API keys remain stored locally in your device's SQLite database.
-            </Text>
-          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 

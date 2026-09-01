@@ -7,7 +7,6 @@ import { Colors, IconSizes, Spacing, Typography } from '@/constants/theme';
 
 interface AppHeaderProps {
   title: string;
-  subtitle?: string;
   showBack?: boolean;
   backLabel?: string;
   showLogo?: boolean;
@@ -17,7 +16,6 @@ interface AppHeaderProps {
 
 export function AppHeader({
   title,
-  subtitle,
   showBack = false,
   backLabel,
   showLogo = false,
@@ -55,16 +53,9 @@ export function AppHeader({
               resizeMode="contain"
             />
           )}
-          <View style={{ flex: 1 }}>
-            <Text style={styles.title} numberOfLines={1}>
-              {title}
-            </Text>
-            {subtitle ? (
-              <Text style={styles.subtitle} numberOfLines={1}>
-                {subtitle}
-              </Text>
-            ) : null}
-          </View>
+          <Text style={styles.title} numberOfLines={1}>
+            {title}
+          </Text>
         </View>
       </View>
 
@@ -85,7 +76,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
     backgroundColor: Colors.surface,
-    borderBottomWidth: 1,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: Colors.border,
     minHeight: 56,
   },
@@ -118,10 +109,6 @@ const styles = StyleSheet.create({
   title: {
     ...Typography.screenTitle,
     fontSize: 20,
-  },
-  subtitle: {
-    ...Typography.caption,
-    marginTop: 1,
   },
   rightAction: {
     flexDirection: 'row',

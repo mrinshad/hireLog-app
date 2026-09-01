@@ -204,7 +204,7 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <AppHeader title="Profile" subtitle="Verified Source of Truth" />
+      <AppHeader title="Profile" />
 
       <ScrollView
         style={styles.scrollView}

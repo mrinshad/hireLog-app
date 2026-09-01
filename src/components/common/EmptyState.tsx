@@ -2,13 +2,12 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 
-import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
+import { Colors, IconSizes, Spacing, Typography } from '@/constants/theme';
 import { PrimaryButton } from './Buttons';
 
 interface EmptyStateProps {
   icon?: keyof typeof Feather.glyphMap;
   title: string;
-  description?: string;
   actionLabel?: string;
   actionIcon?: keyof typeof Feather.glyphMap;
   onAction?: () => void;
@@ -17,7 +16,6 @@ interface EmptyStateProps {
 export function EmptyState({
   icon = 'inbox',
   title,
-  description,
   actionLabel,
   actionIcon,
   onAction,
@@ -28,7 +26,6 @@ export function EmptyState({
         <Feather name={icon} size={IconSizes.xl} color={Colors.primary} />
       </View>
       <Text style={styles.title}>{title}</Text>
-      {description ? <Text style={styles.description}>{description}</Text> : null}
       {actionLabel && onAction ? (
         <PrimaryButton
           title={actionLabel}
@@ -61,12 +58,6 @@ const styles = StyleSheet.create({
     ...Typography.sectionTitle,
     fontSize: 17,
     textAlign: 'center',
-    marginBottom: Spacing.xs,
-  },
-  description: {
-    ...Typography.supporting,
-    textAlign: 'center',
-    maxWidth: 280,
     marginBottom: Spacing.xl,
   },
   actionBtn: {

@@ -15,6 +15,7 @@ import Feather from '@expo/vector-icons/Feather';
 
 import { AppHeader } from '@/components/common/AppHeader';
 import { EmptyState } from '@/components/common/EmptyState';
+import { FadeInView } from '@/components/common/FadeInView';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { PrimaryButton } from '@/components/common/Buttons';
 import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
@@ -102,7 +103,7 @@ export default function JobsScreen() {
     return true;
   });
 
-  const renderJobItem = ({ item }: { item: Job }) => {
+  const renderJobItem = ({ item, index }: { item: Job; index: number }) => {
     const dateLabel =
       item.status === 'Applied' && item.appliedAt
         ? `Applied ${formatRelativeDate(item.appliedAt)}`
@@ -111,33 +112,35 @@ export default function JobsScreen() {
     const stageLabel = getWorkflowLabel(item.workflowState);
 
     return (
-      <TouchableOpacity
-        style={styles.jobCard}
-        activeOpacity={0.7}
-        onPress={() => router.push(`/jobs/${item.id}`)}>
-        <View style={styles.cardHeader}>
-          <View style={styles.titleArea}>
-            <Text style={Typography.itemTitle} numberOfLines={1}>
-              {item.role || 'Untitled Role'}
-            </Text>
-            <Text style={Typography.supporting} numberOfLines={1}>
-              {item.company || 'Company not specified'}
-              {item.location ? ` • ${item.location}` : ''}
-            </Text>
-          </View>
-          <StatusBadge status={item.status} size="sm" />
-        </View>
-
-        <View style={styles.cardMetaRow}>
-          <Text style={Typography.caption}>{dateLabel}</Text>
-
-          <View style={styles.stagePill}>
-            <Text style={styles.stagePillText}>{stageLabel}</Text>
+      <FadeInView delay={index * 50}>
+        <TouchableOpacity
+          style={styles.jobCard}
+          activeOpacity={0.7}
+          onPress={() => router.push(`/jobs/${item.id}`)}>
+          <View style={styles.cardHeader}>
+            <View style={styles.titleArea}>
+              <Text style={Typography.itemTitle} numberOfLines={1}>
+                {item.role || 'Untitled Role'}
+              </Text>
+              <Text style={Typography.supporting} numberOfLines={1}>
+                {item.company || 'Company not specified'}
+                {item.location ? ` • ${item.location}` : ''}
+              </Text>
+            </View>
+            <StatusBadge status={item.status} size="sm" />
           </View>
 
-          <Feather name="chevron-right" size={14} color={Colors.textMuted} style={styles.arrowIcon} />
-        </View>
-      </TouchableOpacity>
+          <View style={styles.cardMetaRow}>
+            <Text style={Typography.caption}>{dateLabel}</Text>
+
+            <View style={styles.stagePill}>
+              <Text style={styles.stagePillText}>{stageLabel}</Text>
+            </View>
+
+            <Feather name="chevron-right" size={14} color={Colors.textMuted} style={styles.arrowIcon} />
+          </View>
+        </TouchableOpacity>
+      </FadeInView>
     );
   };
 
@@ -145,7 +148,6 @@ export default function JobsScreen() {
     <SafeAreaView style={styles.safeArea}>
       <AppHeader
         title="Jobs"
-        subtitle={`${jobs.length} applications`}
         rightAction={
           <PrimaryButton
             title="New Job"
@@ -215,14 +217,8 @@ export default function JobsScreen() {
               ? `No ${selectedStatus} Applications`
               : 'No Applications Yet'
           }
-          description={
-            searchQuery.trim()
-              ? `No jobs match "${searchQuery}". Try different keywords.`
-              : selectedStatus !== 'All'
-              ? `No jobs currently in ${selectedStatus} status.`
-              : 'Paste a job description to start an automated application pipeline.'
-          }
-          actionLabel={searchQuery || selectedStatus !== 'All' ? undefined : 'Start Application'}
+          actionLabel={searchQuery || selectedStatus !== 'All' ? undefined : 'Add Job'}
+          actionIcon="plus"
           onAction={
             searchQuery || selectedStatus !== 'All'
               ? undefined
@@ -308,8 +304,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
     padding: Spacing.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
     gap: Spacing.md,
   },
   cardHeader: {

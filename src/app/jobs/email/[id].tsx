@@ -438,7 +438,6 @@ export default function EmailComposerScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <AppHeader
           title="Email Review"
-          subtitle={job.company}
           showBack
           rightAction={
             <SecondaryButton

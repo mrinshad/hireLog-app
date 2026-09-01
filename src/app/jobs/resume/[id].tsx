@@ -389,7 +389,6 @@ export default function ResumePreviewScreen() {
     <SafeAreaView style={styles.safeArea}>
       <AppHeader
         title="Resume Approval"
-        subtitle={job.company}
         showBack
       />
 

@@ -15,6 +15,7 @@ import Feather from '@expo/vector-icons/Feather';
 
 import { AppHeader } from '@/components/common/AppHeader';
 import { EmptyState } from '@/components/common/EmptyState';
+import { FadeInView } from '@/components/common/FadeInView';
 import { StatusBadge } from '@/components/common/StatusBadge';
 import { PrimaryButton } from '@/components/common/Buttons';
 import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/theme';
@@ -72,7 +73,7 @@ export default function ResumeLibraryScreen() {
     return true;
   });
 
-  const renderResumeItem = ({ item }: { item: ResumeLibraryItem }) => {
+  const renderResumeItem = ({ item, index }: { item: ResumeLibraryItem; index: number }) => {
     const isSuccess = item.generationStatus === 'Generated' && item.pdfPath;
     const formattedDate = new Date(item.createdAt).toLocaleDateString(undefined, {
       month: 'short',
@@ -80,7 +81,8 @@ export default function ResumeLibraryScreen() {
     });
 
     return (
-      <TouchableOpacity
+      <FadeInView delay={index * 50}>
+        <TouchableOpacity
         style={styles.resumeCard}
         activeOpacity={0.7}
         onPress={() => router.push(`/resumes/${item.id}`)}>
@@ -155,15 +157,15 @@ export default function ResumeLibraryScreen() {
 
           <Feather name="chevron-right" size={14} color={Colors.textMuted} style={styles.arrowIcon} />
         </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </FadeInView>
     );
   };
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <AppHeader
-        title="Resume Library"
-        subtitle={`${resumes.length} generated versions`}
+        title="Resumes"
       />
 
       {/* Search Bar */}
@@ -221,13 +223,8 @@ export default function ResumeLibraryScreen() {
             searchQuery.trim()
               ? 'No Resumes Match Search'
               : selectedStatus !== 'All'
-              ? `No Resumes for ${selectedStatus} Applications`
-              : 'No Resumes Generated Yet'
-          }
-          description={
-            searchQuery.trim()
-              ? `No resumes found for "${searchQuery}".`
-              : 'Every resume generated across all your job applications will appear here.'
+              ? `No Resumes for ${selectedStatus}`
+              : 'No Resumes Yet'
           }
           actionLabel={searchQuery || selectedStatus !== 'All' ? undefined : 'View Jobs'}
           onAction={
@@ -315,8 +312,6 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderRadius: Radius.lg,
     padding: Spacing.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
     gap: Spacing.sm,
   },
   cardHeader: {

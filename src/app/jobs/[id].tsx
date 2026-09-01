@@ -151,8 +151,7 @@ export default function JobDetailsScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <AppHeader
-        title="Job Details"
-        subtitle={job.company}
+        title={job.company || 'Job Details'}
         showBack
         rightAction={
           <SecondaryButton
