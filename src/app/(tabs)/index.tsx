@@ -63,6 +63,7 @@ export default function HomeScreen() {
       <AppHeader
         title="HireLog"
         subtitle="Application Tracker"
+        showLogo={true}
         rightAction={
           <PrimaryButton
             title="New Job"

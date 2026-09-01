@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Feather from '@expo/vector-icons/Feather';
 import { useRouter } from 'expo-router';
 
@@ -10,6 +10,7 @@ interface AppHeaderProps {
   subtitle?: string;
   showBack?: boolean;
   backLabel?: string;
+  showLogo?: boolean;
   onBack?: () => void;
   rightAction?: React.ReactNode;
 }
@@ -19,6 +20,7 @@ export function AppHeader({
   subtitle,
   showBack = false,
   backLabel,
+  showLogo = false,
   onBack,
   rightAction,
 }: AppHeaderProps) {
@@ -45,14 +47,25 @@ export function AppHeader({
       ) : null}
 
       <View style={styles.titleContainer}>
-        <Text style={styles.title} numberOfLines={1}>
-          {title}
-        </Text>
-        {subtitle ? (
-          <Text style={styles.subtitle} numberOfLines={1}>
-            {subtitle}
-          </Text>
-        ) : null}
+        <View style={styles.titleRow}>
+          {showLogo && (
+            <Image
+              source={require('../../../assets/images/logo.png')}
+              style={styles.headerLogo}
+              resizeMode="contain"
+            />
+          )}
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title} numberOfLines={1}>
+              {title}
+            </Text>
+            {subtitle ? (
+              <Text style={styles.subtitle} numberOfLines={1}>
+                {subtitle}
+              </Text>
+            ) : null}
+          </View>
+        </View>
       </View>
 
       {rightAction ? (
@@ -91,6 +104,16 @@ const styles = StyleSheet.create({
   titleContainer: {
     flex: 1,
     justifyContent: 'center',
+  },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  headerLogo: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
   },
   title: {
     ...Typography.screenTitle,
