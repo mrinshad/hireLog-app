@@ -86,10 +86,10 @@ export async function up(db: SQLiteDatabase): Promise<void> {
     );
   }
 
-  // 4. If an existing Gemini API key is stored in settings table, migrate it into api_keys table
+  // 4. If an existing Gemini API key is stored in app_settings table, migrate it into api_keys table
   try {
     const existingKeyRow = await db.getFirstAsync<{ value: string }>(
-      "SELECT value FROM settings WHERE key = 'gemini_api_key';"
+      "SELECT value FROM app_settings WHERE key = 'gemini_api_key';"
     );
     if (existingKeyRow && existingKeyRow.value && existingKeyRow.value.trim()) {
       const id = `key_${Date.now()}`;

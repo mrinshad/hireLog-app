@@ -21,6 +21,7 @@ import { Colors, IconSizes, Radius, Spacing, Typography } from '@/constants/them
 import { AppDialog, AppToast } from '@/context/DialogContext';
 import { ApiKeyItem, apiKeyRepository } from '@/database/repositories/apiKeyRepository';
 import { deviceAuthService } from '@/services/auth/deviceAuthService';
+import { errorLogger } from '@/services/logging/errorLogger';
 import { profileSeeder } from '@/services/profile/profileSeeder';
 
 export default function SettingsScreen() {
@@ -44,6 +45,7 @@ export default function SettingsScreen() {
       const active = await apiKeyRepository.getActiveApiKey();
       setActiveKey(active);
     } catch (error) {
+      await errorLogger.logError('SettingsScreen.loadSettings', error);
       console.error('Failed to load active settings:', error);
     }
   };

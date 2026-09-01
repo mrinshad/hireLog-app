@@ -27,6 +27,7 @@ import {
   ApiKeyItem,
   apiKeyRepository,
 } from '@/database/repositories/apiKeyRepository';
+import { errorLogger } from '@/services/logging/errorLogger';
 import { geminiClient } from '@/services/gemini/client';
 
 export default function ApiKeysScreen() {
@@ -69,7 +70,7 @@ export default function ApiKeysScreen() {
       const defaultModel = modelsList.find((m) => m.isDefault)?.modelId || modelsList[0]?.modelId || 'gemini-2.5-flash';
       setNewKeyModel(defaultModel);
     } catch (err) {
-      console.error('Failed to load API keys & models:', err);
+      await errorLogger.logError('ApiKeysScreen.loadData', err);
       AppDialog.error('Loading Error', 'Failed to load API configuration.');
     } finally {
       setIsLoading(false);
@@ -86,8 +87,8 @@ export default function ApiKeysScreen() {
       AppToast.show(`"${key.label}" is now active`, 'success');
       await loadData();
     } catch (err) {
-      console.error('Failed to activate API key:', err);
-      AppDialog.error('Error', 'Failed to set active API key.');
+      await errorLogger.logError('ApiKeysScreen.handleSetActiveKey', err, { keyId: key.id });
+      AppDialog.error('Activation Error', 'Failed to set active API key.');
     }
   };
 
@@ -101,7 +102,7 @@ export default function ApiKeysScreen() {
           AppToast.show('API key deleted', 'info');
           await loadData();
         } catch (err) {
-          console.error('Failed to delete API key:', err);
+          await errorLogger.logError('ApiKeysScreen.handleDeleteKey', err, { keyId: key.id });
           AppDialog.error('Delete Error', 'Failed to delete API key.');
         }
       },
@@ -132,7 +133,7 @@ export default function ApiKeysScreen() {
       setNewKeyValue('');
       await loadData();
     } catch (err: any) {
-      console.error('Failed to save API key:', err);
+      await errorLogger.logError('ApiKeysScreen.handleSaveNewKey', err, { label });
       AppDialog.error('Save Failed', err.message || 'Could not save API key.');
     }
   };
@@ -155,7 +156,7 @@ export default function ApiKeysScreen() {
       setNewModelName('');
       await loadData();
     } catch (err: any) {
-      console.error('Failed to add model:', err);
+      await errorLogger.logError('ApiKeysScreen.handleSaveNewModel', err, { modelId: newModelId });
       AppDialog.error('Add Failed', err.message || 'Could not add model.');
     }
   };
@@ -166,6 +167,7 @@ export default function ApiKeysScreen() {
       AppToast.show(`Default model set to ${model.modelId}`, 'success');
       await loadData();
     } catch (err) {
+      await errorLogger.logError('ApiKeysScreen.handleSetDefaultModel', err, { modelId: model.modelId });
       console.error('Failed to set default model:', err);
     }
   };
@@ -193,7 +195,10 @@ export default function ApiKeysScreen() {
         AppDialog.alert('Connection Response', JSON.stringify(testResult));
       }
     } catch (err: any) {
-      console.error('API Key test failed:', err);
+      await errorLogger.logError('ApiKeysScreen.handleTestConnection', err, {
+        keyLabel: activeKey.label,
+        model: activeKey.defaultModel,
+      });
       AppDialog.error(
         'Connection Failed ❌',
         err.message || 'Unable to connect to Gemini API. Please check the API key and permissions.'
