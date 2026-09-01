@@ -1,4 +1,5 @@
 import { getDatabase } from '../database';
+import { errorLogger } from '@/services/logging/errorLogger';
 import { ResumeGenerationStatus, ResumeLibraryItem, ResumeVersion } from '@/services/latex/types';
 import { JobStatus } from '@/types/job';
 import { CustomizedResume } from '@/types/resume';
@@ -86,52 +87,57 @@ export const resumeRepository = {
     errorLog: string | null = null,
     templateVersion: string = 'master-v1'
   ): Promise<ResumeVersion> {
-    const db = await getDatabase();
-    const id = `resume_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const now = new Date().toISOString();
+    try {
+      const db = await getDatabase();
+      const id = `resume_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const now = new Date().toISOString();
 
-    // Query current max version number for this job
-    const maxRow = await db.getFirstAsync<{ max_ver: number | null }>(
-      'SELECT MAX(version_number) as max_ver FROM resume_versions WHERE job_id = ?;',
-      jobId
-    );
-    const nextVersionNumber = (maxRow?.max_ver || 0) + 1;
+      // Query current max version number for this job
+      const maxRow = await db.getFirstAsync<{ max_ver: number | null }>(
+        'SELECT MAX(version_number) as max_ver FROM resume_versions WHERE job_id = ?;',
+        jobId
+      );
+      const nextVersionNumber = (maxRow?.max_ver || 0) + 1;
 
-    const resumeJson = JSON.stringify(resume);
+      const resumeJson = JSON.stringify(resume);
 
-    await db.runAsync(
-      `INSERT INTO resume_versions (id, job_id, version_number, template_version, target_role, target_company, latex_source, resume_json, pdf_path, generation_status, error_log, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
-      id,
-      jobId,
-      nextVersionNumber,
-      templateVersion,
-      resume.targetRole || '',
-      resume.targetCompany || '',
-      latexSource,
-      resumeJson,
-      pdfPath,
-      generationStatus,
-      errorLog,
-      now,
-      now
-    );
+      await db.runAsync(
+        `INSERT INTO resume_versions (id, job_id, version_number, template_version, target_role, target_company, latex_source, resume_json, pdf_path, generation_status, error_log, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        id,
+        jobId,
+        nextVersionNumber,
+        templateVersion,
+        resume.targetRole || '',
+        resume.targetCompany || '',
+        latexSource,
+        resumeJson,
+        pdfPath,
+        generationStatus,
+        errorLog,
+        now,
+        now
+      );
 
-    return {
-      id,
-      jobId,
-      versionNumber: nextVersionNumber,
-      templateVersion,
-      targetRole: resume.targetRole || '',
-      targetCompany: resume.targetCompany || '',
-      latexSource,
-      resumeJson,
-      pdfPath,
-      generationStatus,
-      errorLog,
-      createdAt: now,
-      updatedAt: now,
-    };
+      return {
+        id,
+        jobId,
+        versionNumber: nextVersionNumber,
+        templateVersion,
+        targetRole: resume.targetRole || '',
+        targetCompany: resume.targetCompany || '',
+        latexSource,
+        resumeJson,
+        pdfPath,
+        generationStatus,
+        errorLog,
+        createdAt: now,
+        updatedAt: now,
+      };
+    } catch (err: any) {
+      await errorLogger.logError('resumeRepository.saveResumeVersion', err, { jobId });
+      throw err;
+    }
   },
 
   /**
@@ -143,22 +149,27 @@ export const resumeRepository = {
     generationStatus: ResumeGenerationStatus,
     errorLog: string | null = null
   ): Promise<void> {
-    const db = await getDatabase();
-    const now = new Date().toISOString();
+    try {
+      const db = await getDatabase();
+      const now = new Date().toISOString();
 
-    await db.runAsync(
-      `UPDATE resume_versions SET
-         pdf_path = ?,
-         generation_status = ?,
-         error_log = ?,
-         updated_at = ?
-       WHERE id = ?;`,
-      pdfPath,
-      generationStatus,
-      errorLog,
-      now,
-      id
-    );
+      await db.runAsync(
+        `UPDATE resume_versions SET
+           pdf_path = ?,
+           generation_status = ?,
+           error_log = ?,
+           updated_at = ?
+         WHERE id = ?;`,
+        pdfPath,
+        generationStatus,
+        errorLog,
+        now,
+        id
+      );
+    } catch (err: any) {
+      await errorLogger.logError('resumeRepository.updateResumePdf', err, { id, pdfPath });
+      throw err;
+    }
   },
 
   /**
@@ -166,40 +177,50 @@ export const resumeRepository = {
    * Sorted newest-generated first.
    */
   async getAllResumeVersions(): Promise<ResumeLibraryItem[]> {
-    const db = await getDatabase();
-    const rows = await db.getAllAsync<ResumeLibraryRow>(`
-      SELECT
-        rv.id,
-        rv.job_id,
-        rv.version_number,
-        rv.template_version,
-        rv.target_role,
-        rv.target_company,
-        rv.pdf_path,
-        rv.generation_status,
-        rv.created_at,
-        rv.updated_at,
-        j.status as job_status,
-        j.company as job_company,
-        j.role as job_role,
-        (CASE WHEN j.approved_resume_version_id = rv.id THEN 1 ELSE 0 END) as is_approved
-      FROM resume_versions rv
-      LEFT JOIN jobs j ON rv.job_id = j.id
-      ORDER BY rv.created_at DESC;
-    `);
-    return rows.map(mapRowToLibraryItem);
+    try {
+      const db = await getDatabase();
+      const rows = await db.getAllAsync<ResumeLibraryRow>(`
+        SELECT
+          rv.id,
+          rv.job_id,
+          rv.version_number,
+          rv.template_version,
+          rv.target_role,
+          rv.target_company,
+          rv.pdf_path,
+          rv.generation_status,
+          rv.created_at,
+          rv.updated_at,
+          j.status as job_status,
+          j.company as job_company,
+          j.role as job_role,
+          (CASE WHEN j.approved_resume_version_id = rv.id THEN 1 ELSE 0 END) as is_approved
+        FROM resume_versions rv
+        LEFT JOIN jobs j ON rv.job_id = j.id
+        ORDER BY rv.created_at DESC;
+      `);
+      return rows.map(mapRowToLibraryItem);
+    } catch (err: any) {
+      await errorLogger.logError('resumeRepository.getAllResumeVersions', err);
+      return [];
+    }
   },
 
   /**
    * Retrieves all resume versions for a specific job, ordered by newest first.
    */
   async getResumeVersions(jobId: string): Promise<ResumeVersion[]> {
-    const db = await getDatabase();
-    const rows = await db.getAllAsync<ResumeVersionRow>(
-      'SELECT id, job_id, version_number, template_version, target_role, target_company, latex_source, resume_json, pdf_path, generation_status, error_log, created_at, updated_at FROM resume_versions WHERE job_id = ? ORDER BY version_number DESC;',
-      jobId
-    );
-    return rows.map(mapRowToVersion);
+    try {
+      const db = await getDatabase();
+      const rows = await db.getAllAsync<ResumeVersionRow>(
+        'SELECT id, job_id, version_number, template_version, target_role, target_company, latex_source, resume_json, pdf_path, generation_status, error_log, created_at, updated_at FROM resume_versions WHERE job_id = ? ORDER BY version_number DESC;',
+        jobId
+      );
+      return rows.map(mapRowToVersion);
+    } catch (err: any) {
+      await errorLogger.logError('resumeRepository.getResumeVersions', err, { jobId });
+      return [];
+    }
   },
 
   /**

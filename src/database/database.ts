@@ -1,6 +1,7 @@
 import { openDatabaseAsync, SQLiteDatabase } from 'expo-sqlite';
 
 import { runMigrations } from './migrations';
+import { seedAiModels } from './seeders/modelSeeder';
 
 let dbInstance: SQLiteDatabase | null = null;
 let initPromise: Promise<SQLiteDatabase> | null = null;
@@ -25,6 +26,9 @@ export async function getDatabase(): Promise<SQLiteDatabase> {
 
     // Run schema migrations
     await runMigrations(db);
+
+    // Seed dynamic AI models catalog from Google AI Studio
+    await seedAiModels(db);
 
     dbInstance = db;
     return db;

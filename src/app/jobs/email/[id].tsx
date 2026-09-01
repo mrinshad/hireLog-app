@@ -32,8 +32,10 @@ import { GeminiError } from '@/services/gemini/client';
 import { latexCompiler } from '@/services/latex/compiler';
 import { localPdfGenerator } from '@/services/pdf/pdfGenerator';
 import { ResumeVersion } from '@/services/latex/types';
+import { errorLogger } from '@/services/logging/errorLogger';
 import { CustomizedResume } from '@/types/resume';
 import { matchingEngine } from '@/services/matching/matchingEngine';
+import { resumeCustomizer } from '@/services/resume/resumeCustomizer';
 import { workflowOrchestrator } from '@/services/workflow/workflowOrchestrator';
 import { Job } from '@/types/job';
 import { Profile } from '@/types/profile';
@@ -261,6 +263,10 @@ export default function EmailComposerScreen() {
         return targetPath;
       }
     } catch (err) {
+      await errorLogger.logError('EmailComposer.getOrCompilePdfPath', err, {
+        jobId: job?.id,
+        resumeId: latestResume?.id,
+      });
       console.warn('Could not compile PDF for email attachment:', err);
     } finally {
       setIsCompilingPdf(false);
@@ -275,32 +281,44 @@ export default function EmailComposerScreen() {
       setIsCompilingPdf(true);
       AppToast.show('Saving PDF document to hireFlow folder...', 'info');
 
-      let compiled: { pdfPath: string; sizeBytes: number } | null = null;
-
+      let resumeDataToRender: CustomizedResume | null = null;
       if (latestResume.resumeJson) {
         try {
-          const parsed = JSON.parse(latestResume.resumeJson) as CustomizedResume;
-          compiled = await localPdfGenerator.generatePdfFromResume(
-            parsed,
-            job?.company || 'hireFlow',
-            latestResume.versionNumber
-          );
-        } catch (localErr) {
-          console.warn('Local PDF generation fallback:', localErr);
-        }
+          resumeDataToRender = JSON.parse(latestResume.resumeJson) as CustomizedResume;
+        } catch {}
       }
 
-      if (!compiled && latestResume.latexSource) {
-        compiled = await latexCompiler.compileToPdf(
-          latestResume.latexSource,
-          job?.company || job?.id || 'hireFlow',
-          `v${latestResume.versionNumber}`
-        );
+      if (!resumeDataToRender && profile && job) {
+        const analysis = job.analysis || {
+          company: job.company || 'Company',
+          role: job.role || 'Software Engineer',
+          location: job.location || null,
+          experienceRequirement: null,
+          educationRequirement: null,
+          salary: job.salary || null,
+          employmentType: null,
+          workMode: null,
+          applicationEmail: job.applicationEmail || null,
+          applicationUrl: job.sourceUrl || null,
+          requiredSkills: [],
+          preferredSkills: [],
+          responsibilities: [],
+          otherRequirements: [],
+          analyzedAt: new Date().toISOString(),
+        };
+        const match = job.matchResult || matchingEngine.match(profile, analysis);
+        resumeDataToRender = resumeCustomizer.customize(profile, analysis, match, job.id);
       }
 
-      if (!compiled) {
-        throw new Error('Could not generate PDF document.');
+      if (!resumeDataToRender) {
+        throw new Error('Resume content is missing.');
       }
+
+      const compiled = await localPdfGenerator.generatePdfFromResume(
+        resumeDataToRender,
+        job?.company || 'hireFlow',
+        latestResume.versionNumber
+      );
 
       await resumeRepository.updateResumePdf(latestResume.id, compiled.pdfPath, 'Generated');
       setLatestResume((prev) => (prev ? { ...prev, pdfPath: compiled.pdfPath } : null));
@@ -358,6 +376,11 @@ export default function EmailComposerScreen() {
       });
     } catch (error: any) {
       setHasOpenedEmailApp(false);
+      await errorLogger.logError('EmailComposer.launchEmailIntent', error, {
+        recipient,
+        subject,
+        attachmentPath,
+      });
       console.error('Error opening email client:', error);
       AppDialog.error('Email App Error', error.message || 'Failed to open your email application.');
     }
@@ -419,14 +442,6 @@ export default function EmailComposerScreen() {
         />
 
         <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-          {/* Header Banner */}
-          <Card style={styles.gateBannerCard}>
-            <Text style={Typography.sectionTitle}>Review & Send Application</Text>
-            <Text style={[Typography.caption, { marginVertical: Spacing.xs }]}>
-              Verify your application email and attachment. Tapping "Open in Email App" will transfer the draft into your email client.
-            </Text>
-          </Card>
-
           {/* Recipient */}
           <Card style={styles.card}>
             <View style={styles.labelRow}>

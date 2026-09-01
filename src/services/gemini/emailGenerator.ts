@@ -1,4 +1,5 @@
 import { geminiClient, GeminiError } from './client';
+import { errorLogger } from '@/services/logging/errorLogger';
 import { GenerateEmailInput } from '@/types/email';
 
 const EMAIL_SYSTEM_PROMPT = `
@@ -61,6 +62,10 @@ Remember: Return JSON with { "body": "..." } and do NOT include the signature.
 
       return response.body.trim();
     } catch (error: any) {
+      await errorLogger.logError('emailGenerator.generateEmailBody', error, {
+        role: input.role,
+        company: input.company,
+      });
       if (error instanceof GeminiError) {
         throw error;
       }

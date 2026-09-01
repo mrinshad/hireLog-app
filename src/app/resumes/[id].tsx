@@ -86,35 +86,26 @@ export default function ResumeDetailsScreen() {
         }
       }
 
-      // If PDF file does not exist on disk, generate it on-demand
+      // If PDF file does not exist on disk, generate it on-device
       if (!targetPath) {
-        AppToast.show('Generating PDF document...', 'info');
+        AppToast.show('Generating PDF document on-device...', 'info');
 
-        let compiled: { pdfPath: string; sizeBytes: number } | null = null;
-
-        if (parsedResume) {
+        let resumeDataToRender = parsedResume;
+        if (!resumeDataToRender && resumeVersion.resumeJson) {
           try {
-            compiled = await localPdfGenerator.generatePdfFromResume(
-              parsedResume,
-              resumeVersion.targetCompany || 'hireFlow',
-              resumeVersion.versionNumber
-            );
-          } catch (localErr) {
-            console.warn('Local PDF generation fallback:', localErr);
-          }
+            resumeDataToRender = JSON.parse(resumeVersion.resumeJson) as CustomizedResume;
+          } catch {}
         }
 
-        if (!compiled && resumeVersion.latexSource) {
-          compiled = await latexCompiler.compileToPdf(
-            resumeVersion.latexSource,
-            resumeVersion.targetCompany || 'hireFlow',
-            resumeVersion.id
-          );
+        if (!resumeDataToRender) {
+          throw new Error('Resume content is missing or corrupted.');
         }
 
-        if (!compiled) {
-          throw new Error('Could not generate PDF document.');
-        }
+        const compiled = await localPdfGenerator.generatePdfFromResume(
+          resumeDataToRender,
+          resumeVersion.targetCompany || 'hireFlow',
+          resumeVersion.versionNumber
+        );
 
         targetPath = compiled.pdfPath;
 
@@ -150,10 +141,10 @@ export default function ResumeDetailsScreen() {
         UTI: 'com.adobe.pdf',
       });
     } catch (error: any) {
-      console.error('Error compiling/opening PDF:', error);
+      console.error('Error opening PDF:', error);
       AppDialog.error(
-        'PDF Compilation Failed',
-        error.message || 'Could not compile PDF document. Please verify internet connection.'
+        'PDF Generation Failed',
+        error.message || 'Could not generate PDF file on device.'
       );
     }
   };

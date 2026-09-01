@@ -1,4 +1,5 @@
 import { getDatabase } from '../database';
+import { errorLogger } from '@/services/logging/errorLogger';
 import {
   AnalysisStatus,
   CreateJobInput,
@@ -112,131 +113,159 @@ export const jobRepository = {
    * Retrieves all jobs ordered by newest activity (updated_at) first.
    */
   async getJobs(): Promise<Job[]> {
-    const db = await getDatabase();
-    const rows = await db.getAllAsync<JobRow>(
-      `SELECT ${SELECT_JOB_FIELDS} FROM jobs ORDER BY updated_at DESC;`
-    );
-    return rows.map(mapRowToJob);
+    try {
+      const db = await getDatabase();
+      const rows = await db.getAllAsync<JobRow>(
+        `SELECT ${SELECT_JOB_FIELDS} FROM jobs ORDER BY updated_at DESC;`
+      );
+      return rows.map(mapRowToJob);
+    } catch (err: any) {
+      await errorLogger.logError('jobRepository.getJobs', err);
+      throw err;
+    }
   },
 
   /**
    * Retrieves jobs filtered by status and/or search query.
    */
   async getFilteredJobs(filter: { status?: string; search?: string }): Promise<Job[]> {
-    const db = await getDatabase();
-    let query = `SELECT ${SELECT_JOB_FIELDS} FROM jobs WHERE 1=1`;
-    const params: string[] = [];
+    try {
+      const db = await getDatabase();
+      let query = `SELECT ${SELECT_JOB_FIELDS} FROM jobs WHERE 1=1`;
+      const params: string[] = [];
 
-    if (filter.status && filter.status !== 'All') {
-      query += ' AND status = ?';
-      params.push(filter.status);
+      if (filter.status && filter.status !== 'All') {
+        query += ' AND status = ?';
+        params.push(filter.status);
+      }
+
+      if (filter.search && filter.search.trim()) {
+        query += ' AND (company LIKE ? OR role LIKE ? OR location LIKE ?)';
+        const term = `%${filter.search.trim()}%`;
+        params.push(term, term, term);
+      }
+
+      query += ' ORDER BY updated_at DESC;';
+
+      const rows = await db.getAllAsync<JobRow>(query, ...params);
+      return rows.map(mapRowToJob);
+    } catch (err: any) {
+      await errorLogger.logError('jobRepository.getFilteredJobs', err, filter);
+      throw err;
     }
-
-    if (filter.search && filter.search.trim()) {
-      query += ' AND (company LIKE ? OR role LIKE ? OR location LIKE ?)';
-      const term = `%${filter.search.trim()}%`;
-      params.push(term, term, term);
-    }
-
-    query += ' ORDER BY updated_at DESC;';
-
-    const rows = await db.getAllAsync<JobRow>(query, ...params);
-    return rows.map(mapRowToJob);
   },
 
   /**
    * Retrieves the most recent jobs ordered by activity.
    */
   async getRecentJobs(limit = 5): Promise<Job[]> {
-    const db = await getDatabase();
-    const rows = await db.getAllAsync<JobRow>(
-      `SELECT ${SELECT_JOB_FIELDS} FROM jobs ORDER BY updated_at DESC LIMIT ?;`,
-      limit
-    );
-    return rows.map(mapRowToJob);
+    try {
+      const db = await getDatabase();
+      const rows = await db.getAllAsync<JobRow>(
+        `SELECT ${SELECT_JOB_FIELDS} FROM jobs ORDER BY updated_at DESC LIMIT ?;`,
+        limit
+      );
+      return rows.map(mapRowToJob);
+    } catch (err: any) {
+      await errorLogger.logError('jobRepository.getRecentJobs', err, { limit });
+      throw err;
+    }
   },
 
   /**
    * Retrieves a single job by id.
    */
   async getJob(id: string): Promise<Job | null> {
-    const db = await getDatabase();
-    const row = await db.getFirstAsync<JobRow>(
-      `SELECT ${SELECT_JOB_FIELDS} FROM jobs WHERE id = ?;`,
-      id
-    );
-    return row ? mapRowToJob(row) : null;
+    try {
+      const db = await getDatabase();
+      const row = await db.getFirstAsync<JobRow>(
+        `SELECT ${SELECT_JOB_FIELDS} FROM jobs WHERE id = ?;`,
+        id
+      );
+      return row ? mapRowToJob(row) : null;
+    } catch (err: any) {
+      await errorLogger.logError('jobRepository.getJob', err, { id });
+      throw err;
+    }
   },
 
   /**
    * Creates a new job posting in SQLite.
    */
   async createJob(input: CreateJobInput): Promise<Job> {
-    const db = await getDatabase();
-    const id = input.id || Date.now().toString();
-    const status = input.status || 'Draft';
-    const appliedAt = status === 'Applied' ? new Date().toISOString() : null;
-    const analysisStatus = input.analysisStatus || 'Not analyzed';
-    const analysisJson = input.analysis ? JSON.stringify(input.analysis) : null;
-    const workflowState = input.workflowState || 'CREATED';
-    const matchJson = input.matchResult ? JSON.stringify(input.matchResult) : null;
-    const now = new Date().toISOString();
+    try {
+      const db = await getDatabase();
+      const id = input.id || Date.now().toString();
+      const status = input.status || 'Draft';
+      const appliedAt = status === 'Applied' ? new Date().toISOString() : null;
+      const analysisStatus = input.analysisStatus || 'Not analyzed';
+      const analysisJson = input.analysis ? JSON.stringify(input.analysis) : null;
+      const workflowState = input.workflowState || 'CREATED';
+      const matchJson = input.matchResult ? JSON.stringify(input.matchResult) : null;
+      const now = new Date().toISOString();
 
-    await db.runAsync(
-      `INSERT INTO jobs (
-         id, company, role, location, job_description, application_email, salary, source, source_url,
-         status, applied_at, analysis_status, analysis_json, analysis_updated_at,
-         workflow_state, workflow_failed_step, workflow_error_message,
-         approved_resume_version_id, resume_approved_at, match_json,
-         created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
-      id,
-      input.company || '',
-      input.role || '',
-      input.location || '',
-      input.jobDescription,
-      input.applicationEmail || '',
-      input.salary || '',
-      input.source || '',
-      input.sourceUrl || '',
-      status,
-      appliedAt,
-      analysisStatus,
-      analysisJson,
-      input.analysis ? now : null,
-      workflowState,
-      input.workflowFailedStep || null,
-      input.workflowErrorMessage || null,
-      input.approvedResumeVersionId || null,
-      input.resumeApprovedAt || null,
-      matchJson,
-      now,
-      now
-    );
+      await db.runAsync(
+        `INSERT INTO jobs (
+           id, company, role, location, job_description, application_email, salary, source, source_url,
+           status, applied_at, analysis_status, analysis_json, analysis_updated_at,
+           workflow_state, workflow_failed_step, workflow_error_message,
+           approved_resume_version_id, resume_approved_at, match_json,
+           created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+        id,
+        input.company || '',
+        input.role || '',
+        input.location || '',
+        input.jobDescription,
+        input.applicationEmail || '',
+        input.salary || '',
+        input.source || '',
+        input.sourceUrl || '',
+        status,
+        appliedAt,
+        analysisStatus,
+        analysisJson,
+        input.analysis ? now : null,
+        workflowState,
+        input.workflowFailedStep || null,
+        input.workflowErrorMessage || null,
+        input.approvedResumeVersionId || null,
+        input.resumeApprovedAt || null,
+        matchJson,
+        now,
+        now
+      );
 
-    return {
-      id,
-      company: input.company || '',
-      role: input.role || '',
-      location: input.location || '',
-      jobDescription: input.jobDescription,
-      applicationEmail: input.applicationEmail,
-      salary: input.salary,
-      source: input.source,
-      sourceUrl: input.sourceUrl,
-      status,
-      appliedAt,
-      analysisStatus,
-      analysis: input.analysis,
-      workflowState,
-      workflowFailedStep: input.workflowFailedStep || null,
-      workflowErrorMessage: input.workflowErrorMessage || null,
-      approvedResumeVersionId: input.approvedResumeVersionId || null,
-      resumeApprovedAt: input.resumeApprovedAt || null,
-      matchResult: input.matchResult || null,
-      createdAt: now,
-      updatedAt: now,
-    };
+      return {
+        id,
+        company: input.company || '',
+        role: input.role || '',
+        location: input.location || '',
+        jobDescription: input.jobDescription,
+        applicationEmail: input.applicationEmail,
+        salary: input.salary,
+        source: input.source,
+        sourceUrl: input.sourceUrl,
+        status,
+        appliedAt,
+        analysisStatus,
+        analysis: input.analysis,
+        workflowState,
+        workflowFailedStep: input.workflowFailedStep || null,
+        workflowErrorMessage: input.workflowErrorMessage || null,
+        approvedResumeVersionId: input.approvedResumeVersionId || null,
+        resumeApprovedAt: input.resumeApprovedAt || null,
+        matchResult: input.matchResult || null,
+        createdAt: now,
+        updatedAt: now,
+      };
+    } catch (err: any) {
+      await errorLogger.logError('jobRepository.createJob', err, {
+        company: input.company,
+        role: input.role,
+      });
+      throw err;
+    }
   },
 
   /**

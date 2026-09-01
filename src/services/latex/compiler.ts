@@ -1,5 +1,8 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { settingsRepository } from '@/database/repositories/settingsRepository';
+import { localPdfGenerator } from '@/services/pdf/pdfGenerator';
+import { errorLogger } from '@/services/logging/errorLogger';
+import { CustomizedResume } from '@/types/resume';
 
 export class CompilerError extends Error {
   compilerLog: string;
@@ -26,15 +29,29 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
 
 export const latexCompiler = {
   /**
-   * Compiles LaTeX source code into a PDF file using a multi-service fallback pool.
+   * Compiles resume into a PDF file on-device, saving to hireFlow/resumes/.
    */
   async compileToPdf(
     latexSource: string,
     jobId: string,
-    versionId: string
+    versionId: string,
+    resumeData?: CustomizedResume
   ): Promise<{ pdfPath: string; sizeBytes: number }> {
     if (!latexSource || !latexSource.trim()) {
       throw new CompilerError('LaTeX source is empty.', 'Empty LaTeX document.');
+    }
+
+    // 1. If structured resumeData is provided, use 100% On-Device local PDF generator
+    if (resumeData) {
+      try {
+        return await localPdfGenerator.generatePdfFromResume(
+          resumeData,
+          jobId,
+          versionId
+        );
+      } catch (localErr) {
+        await errorLogger.logError('latexCompiler.localPdfGenerator', localErr, { jobId, versionId });
+      }
     }
 
     const customUrl = await settingsRepository.getSetting('latex_compiler_url');
@@ -66,26 +83,24 @@ export const latexCompiler = {
 
     for (const strategy of strategies) {
       try {
-        console.log(`Attempting LaTeX compilation via ${strategy.name}...`);
         compiledBuffer = await strategy.compile();
         if (compiledBuffer && compiledBuffer.byteLength > 100) {
-          console.log(`LaTeX compilation succeeded via ${strategy.name} (${compiledBuffer.byteLength} bytes)`);
           break;
         }
       } catch (err: any) {
-        console.warn(`Compilation failed via ${strategy.name}:`, err.message || err);
         lastError = err;
       }
     }
 
     if (!compiledBuffer || compiledBuffer.byteLength < 100) {
-      throw (
+      const finalError =
         lastError ||
         new CompilerError(
-          'LaTeX compilation service is currently unreachable. Please check your internet connection or configure a custom compiler endpoint in Settings.',
+          'LaTeX compilation service is currently unreachable.',
           'All compiler endpoints failed.'
-        )
-      );
+        );
+      await errorLogger.logError('latexCompiler.compileToPdf', finalError, { jobId, versionId });
+      throw finalError;
     }
 
     const base64Data = arrayBufferToBase64(compiledBuffer);

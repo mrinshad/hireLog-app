@@ -1,5 +1,6 @@
 import * as Print from 'expo-print';
 import * as FileSystem from 'expo-file-system/legacy';
+import { errorLogger } from '@/services/logging/errorLogger';
 import { CustomizedResume } from '@/types/resume';
 
 /**
@@ -330,35 +331,43 @@ export const localPdfGenerator = {
     companyOrJobId: string,
     versionNumber: number | string
   ): Promise<{ pdfPath: string; sizeBytes: number }> {
-    const html = generateResumeHtml(resume);
+    try {
+      const html = generateResumeHtml(resume);
 
-    // Render PDF on-device using native OS engine
-    const printResult = await Print.printToFileAsync({
-      html,
-      width: 595,
-      height: 842,
-    });
+      // Render PDF on-device using native OS engine
+      const printResult = await Print.printToFileAsync({
+        html,
+        width: 595,
+        height: 842,
+      });
 
-    const dir = `${FileSystem.documentDirectory}hireFlow/resumes/`;
-    const safeCompany = (companyOrJobId || 'hireFlow').replace(/[^a-zA-Z0-9_-]/g, '_');
-    const targetFilePath = `${dir}${safeCompany}_v${versionNumber}.pdf`;
+      const dir = `${FileSystem.documentDirectory}hireFlow/resumes/`;
+      const safeCompany = (companyOrJobId || 'hireFlow').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const targetFilePath = `${dir}${safeCompany}_v${versionNumber}.pdf`;
 
-    const dirInfo = await FileSystem.getInfoAsync(dir);
-    if (!dirInfo.exists) {
-      await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+      const dirInfo = await FileSystem.getInfoAsync(dir);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+      }
+
+      // Copy file into hireFlow directory
+      await FileSystem.copyAsync({
+        from: printResult.uri,
+        to: targetFilePath,
+      });
+
+      const fileInfo = await FileSystem.getInfoAsync(targetFilePath);
+
+      return {
+        pdfPath: targetFilePath,
+        sizeBytes: (fileInfo as any).size || 25000,
+      };
+    } catch (err: any) {
+      await errorLogger.logError('localPdfGenerator.generatePdfFromResume', err, {
+        companyOrJobId,
+        versionNumber,
+      });
+      throw err;
     }
-
-    // Copy file into hireFlow directory
-    await FileSystem.copyAsync({
-      from: printResult.uri,
-      to: targetFilePath,
-    });
-
-    const fileInfo = await FileSystem.getInfoAsync(targetFilePath);
-
-    return {
-      pdfPath: targetFilePath,
-      sizeBytes: (fileInfo as any).size || 25000,
-    };
   },
 };

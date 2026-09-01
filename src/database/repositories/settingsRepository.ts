@@ -1,4 +1,5 @@
 import { getDatabase } from '../database';
+import { errorLogger } from '@/services/logging/errorLogger';
 
 interface SettingRow {
   key: string;
@@ -11,28 +12,38 @@ export const settingsRepository = {
    * Retrieves a setting by key.
    */
   async getSetting(key: string): Promise<string | null> {
-    const db = await getDatabase();
-    const row = await db.getFirstAsync<SettingRow>(
-      'SELECT key, value, updated_at FROM app_settings WHERE key = ?;',
-      key
-    );
-    return row ? row.value : null;
+    try {
+      const db = await getDatabase();
+      const row = await db.getFirstAsync<SettingRow>(
+        'SELECT key, value, updated_at FROM app_settings WHERE key = ?;',
+        key
+      );
+      return row ? row.value : null;
+    } catch (err: any) {
+      await errorLogger.logError('settingsRepository.getSetting', err, { key });
+      return null;
+    }
   },
 
   /**
    * Sets or updates a setting by key.
    */
   async setSetting(key: string, value: string): Promise<void> {
-    const db = await getDatabase();
-    await db.runAsync(
-      `INSERT INTO app_settings (key, value, updated_at)
-       VALUES (?, ?, datetime('now'))
-       ON CONFLICT(key) DO UPDATE SET
-         value = excluded.value,
-         updated_at = datetime('now');`,
-      key,
-      value
-    );
+    try {
+      const db = await getDatabase();
+      await db.runAsync(
+        `INSERT INTO app_settings (key, value, updated_at)
+         VALUES (?, ?, datetime('now'))
+         ON CONFLICT(key) DO UPDATE SET
+           value = excluded.value,
+           updated_at = datetime('now');`,
+        key,
+        value
+      );
+    } catch (err: any) {
+      await errorLogger.logError('settingsRepository.setSetting', err, { key });
+      throw err;
+    }
   },
 
   /**

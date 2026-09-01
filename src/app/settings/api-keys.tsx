@@ -28,7 +28,7 @@ import {
   apiKeyRepository,
 } from '@/database/repositories/apiKeyRepository';
 import { errorLogger } from '@/services/logging/errorLogger';
-import { geminiClient } from '@/services/gemini/client';
+import { ApiKeyDiagnosticReport, geminiClient } from '@/services/gemini/client';
 
 export default function ApiKeysScreen() {
   const router = useRouter();
@@ -39,6 +39,10 @@ export default function ApiKeysScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isTesting, setIsTesting] = useState(false);
   const [revealedKeyIds, setRevealedKeyIds] = useState<Record<string, boolean>>({});
+
+  // Diagnostic Report Modal State
+  const [diagnosticReport, setDiagnosticReport] = useState<ApiKeyDiagnosticReport | null>(null);
+  const [isDiagnosticModalVisible, setIsDiagnosticModalVisible] = useState(false);
 
   // Add API Key Modal State
   const [isAddKeyModalVisible, setIsAddKeyModalVisible] = useState(false);
@@ -172,39 +176,52 @@ export default function ApiKeysScreen() {
     }
   };
 
-  const handleTestConnection = async () => {
-    if (!activeKey) {
+  const handleTestConnection = async (targetKey?: ApiKeyItem | any) => {
+    const keyToTest = (targetKey && typeof targetKey === 'object' && 'apiKey' in targetKey)
+      ? (targetKey as ApiKeyItem)
+      : activeKey;
+    if (!keyToTest) {
       AppDialog.alert('No Active Key', 'Please add and activate an API key first.');
       return;
     }
 
     try {
       setIsTesting(true);
-      AppToast.show('Testing API connection...', 'info');
+      AppToast.show('Testing models (<10 tokens)...', 'info');
 
-      const testResult = await geminiClient.generateJson<{ status: string; message: string }>(
-        'Respond with a JSON object: {"status": "ok", "message": "API key and model active"}'
-      );
-
-      if (testResult && testResult.status === 'ok') {
-        AppDialog.alert(
-          'Connection Successful! ✅',
-          `Successfully verified with model: ${activeKey.defaultModel || 'gemini-2.5-flash'}`
-        );
-      } else {
-        AppDialog.alert('Connection Response', JSON.stringify(testResult));
-      }
+      const allModelsList = models.map((m) => m.modelId);
+      const report = await geminiClient.diagnoseApiKey(keyToTest.apiKey, allModelsList);
+      setDiagnosticReport(report);
+      setIsDiagnosticModalVisible(true);
     } catch (err: any) {
       await errorLogger.logError('ApiKeysScreen.handleTestConnection', err, {
-        keyLabel: activeKey.label,
-        model: activeKey.defaultModel,
+        keyLabel: keyToTest.label,
       });
       AppDialog.error(
-        'Connection Failed ❌',
-        err.message || 'Unable to connect to Gemini API. Please check the API key and permissions.'
+        'Connection Test Failed',
+        err.message || 'Unable to communicate with Gemini API.'
       );
     } finally {
       setIsTesting(false);
+    }
+  };
+
+  const handleApplyOptimalModel = async (modelId: string) => {
+    if (!activeKey) return;
+    try {
+      await apiKeyRepository.saveApiKey({
+        id: activeKey.id,
+        label: activeKey.label,
+        apiKey: activeKey.apiKey,
+        defaultModel: modelId,
+        isActive: activeKey.isActive,
+      });
+      await loadData();
+      setIsDiagnosticModalVisible(false);
+      AppToast.show(`Assigned ${modelId} as active default model`, 'success');
+    } catch (err: any) {
+      await errorLogger.logError('ApiKeysScreen.handleApplyOptimalModel', err, { modelId });
+      AppDialog.error('Update Failed', 'Failed to update key default model.');
     }
   };
 
@@ -594,6 +611,164 @@ export default function ApiKeysScreen() {
             </View>
           </View>
         </Modal>
+
+        {/* Diagnostic Report Modal */}
+        <Modal
+          visible={isDiagnosticModalVisible}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setIsDiagnosticModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { maxHeight: '85%' }]}>
+              <View style={styles.modalHeader}>
+                <View style={styles.diagnosticTitleRow}>
+                  <Feather name="activity" size={18} color={Colors.primary} />
+                  <Text style={Typography.sectionTitle}>Model Connection Diagnostics</Text>
+                </View>
+                <TouchableOpacity onPress={() => setIsDiagnosticModalVisible(false)}>
+                  <Feather name="x" size={20} color={Colors.textPrimary} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+                {diagnosticReport && (
+                  <View style={styles.diagnosticContainer}>
+                    {/* Overall Summary Banner */}
+                    <View
+                      style={[
+                        styles.diagnosticBanner,
+                        diagnosticReport.overallStatus === 'all_ok' && styles.bannerSuccess,
+                        diagnosticReport.overallStatus === 'some_ok' && styles.bannerWarning,
+                        diagnosticReport.overallStatus === 'rate_limited' && styles.bannerRateLimit,
+                        diagnosticReport.overallStatus === 'auth_failed' && styles.bannerDanger,
+                        diagnosticReport.overallStatus === 'failed' && styles.bannerDanger,
+                      ]}>
+                      <Feather
+                        name={
+                          diagnosticReport.overallStatus === 'all_ok' || diagnosticReport.overallStatus === 'some_ok'
+                            ? 'check-circle'
+                            : diagnosticReport.overallStatus === 'rate_limited'
+                            ? 'alert-triangle'
+                            : 'x-circle'
+                        }
+                        size={18}
+                        color={
+                          diagnosticReport.overallStatus === 'all_ok'
+                            ? Colors.successText
+                            : diagnosticReport.overallStatus === 'some_ok'
+                            ? Colors.primary
+                            : diagnosticReport.overallStatus === 'rate_limited'
+                            ? '#D97706'
+                            : Colors.errorText
+                        }
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.diagnosticBannerTitle}>
+                          {diagnosticReport.overallStatus === 'all_ok'
+                            ? 'All Models Active & Verified'
+                            : diagnosticReport.overallStatus === 'some_ok'
+                            ? 'Connection Active (Optimal Model Found)'
+                            : diagnosticReport.overallStatus === 'rate_limited'
+                            ? 'Rate Limit / Quota Exceeded'
+                            : diagnosticReport.overallStatus === 'auth_failed'
+                            ? 'Authentication Failed'
+                            : 'Connection Failed'}
+                        </Text>
+                        <Text style={styles.diagnosticBannerSub}>
+                          Ultra-low token check completed (under 10 tokens spent).
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Model Results Breakdown */}
+                    <Text style={[Typography.caption, { marginTop: Spacing.sm, marginBottom: Spacing.xs }]}>
+                      INDIVIDUAL MODEL DIAGNOSTICS
+                    </Text>
+
+                    {diagnosticReport.results.map((item) => {
+                      const isOk = item.status === 'ok';
+                      const isRate = item.status === 'rate_limited';
+                      const isAuth = item.status === 'auth_error';
+                      const isNotFound = item.status === 'not_found';
+                      const isCredits = item.status === 'credits_depleted';
+
+                      return (
+                        <View key={item.modelId} style={styles.diagnosticRow}>
+                          <View style={{ flex: 1 }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                              <Text style={Typography.itemTitle}>{item.modelId}</Text>
+                              {diagnosticReport.optimalModel === item.modelId && (
+                                <View style={styles.optimalTag}>
+                                  <Text style={styles.optimalTagText}>OPTIMAL</Text>
+                                </View>
+                              )}
+                            </View>
+                            <Text
+                              style={[
+                                styles.diagnosticRowMsg,
+                                isOk && { color: Colors.successText },
+                                isRate && { color: '#D97706' },
+                                isCredits && { color: '#DC2626' },
+                                (isAuth || isNotFound) && { color: Colors.textMuted },
+                              ]}>
+                              {item.message}
+                            </Text>
+                          </View>
+
+                          <View
+                            style={[
+                              styles.diagnosticStatusBadge,
+                              isOk && styles.statusBadgeOk,
+                              isRate && styles.statusBadgeRate,
+                              (isCredits || isAuth) && styles.statusBadgeDanger,
+                              isNotFound && styles.statusBadgeNotFound,
+                            ]}>
+                            <Text
+                              style={[
+                                styles.diagnosticStatusBadgeText,
+                                isOk && { color: Colors.successText },
+                                isRate && { color: '#D97706' },
+                                (isCredits || isAuth) && { color: Colors.errorText },
+                                isNotFound && { color: Colors.textMuted },
+                              ]}>
+                              {isOk ? 'OK' : isRate ? 'QUOTA' : isCredits ? 'DEPLETED' : isAuth ? 'AUTH' : 'UNAVAIL'}
+                            </Text>
+                          </View>
+                        </View>
+                      );
+                    })}
+
+                    {/* Recommended Optimal Action */}
+                    {diagnosticReport.optimalModel && (
+                      <View style={styles.optimalRecommendationBox}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={Typography.caption}>RECOMMENDED DEFAULT MODEL</Text>
+                          <Text style={[Typography.itemTitle, { color: Colors.primary, marginTop: 2 }]}>
+                            {diagnosticReport.optimalModel}
+                          </Text>
+                        </View>
+                        <PrimaryButton
+                          title="Apply as Default"
+                          size="sm"
+                          icon="check"
+                          onPress={() => handleApplyOptimalModel(diagnosticReport.optimalModel!)}
+                        />
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                <View style={[styles.modalActions, { marginTop: Spacing.lg }]}>
+                  <SecondaryButton
+                    title="Done"
+                    onPress={() => setIsDiagnosticModalVisible(false)}
+                    style={{ flex: 1 }}
+                  />
+                </View>
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -971,5 +1146,111 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: Spacing.md,
     marginTop: Spacing.sm,
+  },
+  diagnosticTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  diagnosticContainer: {
+    gap: Spacing.sm,
+    paddingTop: Spacing.xs,
+  },
+  diagnosticBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+  },
+  bannerSuccess: {
+    backgroundColor: Colors.success + '15',
+    borderColor: Colors.success + '40',
+  },
+  bannerWarning: {
+    backgroundColor: Colors.primary + '15',
+    borderColor: Colors.primary + '40',
+  },
+  bannerRateLimit: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+  },
+  bannerDanger: {
+    backgroundColor: Colors.error + '15',
+    borderColor: Colors.error + '40',
+  },
+  diagnosticBannerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  diagnosticBannerSub: {
+    fontSize: 11,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  diagnosticRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.background,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  diagnosticRowMsg: {
+    fontSize: 11,
+    marginTop: 2,
+  },
+  optimalTag: {
+    backgroundColor: Colors.primary + '20',
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: Radius.sm,
+  },
+  optimalTagText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  diagnosticStatusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+  },
+  statusBadgeOk: {
+    backgroundColor: Colors.success + '20',
+    borderColor: Colors.success,
+  },
+  statusBadgeRate: {
+    backgroundColor: '#FEF3C7',
+    borderColor: '#F59E0B',
+  },
+  statusBadgeDanger: {
+    backgroundColor: Colors.error + '20',
+    borderColor: Colors.error,
+  },
+  statusBadgeNotFound: {
+    backgroundColor: Colors.surface,
+    borderColor: Colors.border,
+  },
+  diagnosticStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  optimalRecommendationBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: Spacing.md,
+    backgroundColor: Colors.primary + '12',
+    borderColor: Colors.primary + '40',
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    marginTop: Spacing.xs,
   },
 });

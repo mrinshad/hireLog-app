@@ -9,6 +9,7 @@ import {
   RecipientResolution,
   resolveRecipient,
 } from './emailFormatting';
+import { errorLogger } from '@/services/logging/errorLogger';
 
 export { formatDefaultSubject, formatSignature, RecipientResolution, resolveRecipient };
 
@@ -29,22 +30,24 @@ export const emailComposerService = {
   }): Promise<{ success: boolean; method: 'composer' | 'fallback_mailto' | 'fallback_share' }> {
     const fullBody = `${options.body.trim()}\n\n${options.signature.trim()}`;
 
-    // Verify attachment and obtain content URI for cross-app sharing
-    let verifiedAttachment: string | undefined = undefined;
+    // Verify attachment file exists and ensure proper file:// protocol
+    let attachmentFilePath: string | undefined = undefined;
     if (options.attachmentUri) {
       try {
-        const info = await FileSystem.getInfoAsync(options.attachmentUri);
+        const fileUri = options.attachmentUri.startsWith('file://')
+          ? options.attachmentUri
+          : `file://${options.attachmentUri}`;
+
+        const info = await FileSystem.getInfoAsync(fileUri);
         if (info.exists) {
-          try {
-            // Android requires a Content URI to grant external email apps read access
-            const contentUri = await FileSystem.getContentUriAsync(options.attachmentUri);
-            verifiedAttachment = contentUri || options.attachmentUri;
-          } catch {
-            verifiedAttachment = options.attachmentUri;
-          }
+          attachmentFilePath = fileUri;
+        } else {
+          console.warn('Attachment file does not exist at path:', fileUri);
         }
       } catch (err) {
-        console.warn('Could not verify attachment file:', err);
+        await errorLogger.logError('emailComposerService.verifyAttachment', err, {
+          attachmentUri: options.attachmentUri,
+        });
       }
     }
 
@@ -56,11 +59,15 @@ export const emailComposerService = {
           recipients: options.recipient ? [options.recipient] : [],
           subject: options.subject,
           body: fullBody,
-          attachments: verifiedAttachment ? [verifiedAttachment] : [],
+          attachments: attachmentFilePath ? [attachmentFilePath] : [],
         });
         return { success: true, method: 'composer' };
       }
     } catch (err) {
+      await errorLogger.logError('emailComposerService.MailComposer', err, {
+        recipient: options.recipient,
+        attachment: attachmentFilePath,
+      });
       console.warn('MailComposer failed, attempting mailto/share fallback:', err);
     }
 
@@ -74,22 +81,24 @@ export const emailComposerService = {
       await Linking.openURL(mailtoUrl);
 
       // If there's an attachment, also trigger share so user can attach it
-      if (verifiedAttachment && (await Sharing.isAvailableAsync())) {
+      if (attachmentFilePath && (await Sharing.isAvailableAsync())) {
         setTimeout(async () => {
           try {
-            await Sharing.shareAsync(verifiedAttachment!, {
+            await Sharing.shareAsync(attachmentFilePath!, {
               mimeType: 'application/pdf',
               dialogTitle: 'Attach Resume PDF',
             });
-          } catch {}
+          } catch (shareErr) {
+            await errorLogger.logError('emailComposerService.fallbackShare', shareErr);
+          }
         }, 800);
       }
       return { success: true, method: 'fallback_mailto' };
     }
 
     // 3. Fallback: Sharing sheet with PDF
-    if (verifiedAttachment && (await Sharing.isAvailableAsync())) {
-      await Sharing.shareAsync(verifiedAttachment, {
+    if (attachmentFilePath && (await Sharing.isAvailableAsync())) {
+      await Sharing.shareAsync(attachmentFilePath, {
         mimeType: 'application/pdf',
         dialogTitle: `Application: ${options.subject}`,
       });

@@ -1,4 +1,5 @@
 import { getDatabase } from '../database';
+import { errorLogger } from '@/services/logging/errorLogger';
 import {
   Certification,
   Education,
@@ -76,104 +77,109 @@ export const profileRepository = {
    * Loads the complete profile from SQLite.
    */
   async getProfile(): Promise<Profile> {
-    const db = await getDatabase();
+    try {
+      const db = await getDatabase();
 
-    // 1. Load Profile Details (single-user row id = 1)
-    const detailsRow = await db.getFirstAsync<ProfileDetailsRow>(
-      'SELECT full_name, email, phone, location, linkedin, github, portfolio, professional_title, professional_summary FROM profile_details WHERE id = 1;'
-    );
+      // 1. Load Profile Details (single-user row id = 1)
+      const detailsRow = await db.getFirstAsync<ProfileDetailsRow>(
+        'SELECT full_name, email, phone, location, linkedin, github, portfolio, professional_title, professional_summary FROM profile_details WHERE id = 1;'
+      );
 
-    const personalDetails: PersonalDetails = {
-      fullName: detailsRow?.full_name ?? '',
-      email: detailsRow?.email ?? '',
-      phone: detailsRow?.phone ?? '',
-      location: detailsRow?.location ?? '',
-      linkedIn: detailsRow?.linkedin ?? '',
-      github: detailsRow?.github ?? '',
-      portfolio: detailsRow?.portfolio ?? '',
-    };
+      const personalDetails: PersonalDetails = {
+        fullName: detailsRow?.full_name ?? '',
+        email: detailsRow?.email ?? '',
+        phone: detailsRow?.phone ?? '',
+        location: detailsRow?.location ?? '',
+        linkedIn: detailsRow?.linkedin ?? '',
+        github: detailsRow?.github ?? '',
+        portfolio: detailsRow?.portfolio ?? '',
+      };
 
-    const professionalInfo: ProfessionalInfo = {
-      professionalTitle: detailsRow?.professional_title ?? '',
-      professionalSummary: detailsRow?.professional_summary ?? '',
-    };
+      const professionalInfo: ProfessionalInfo = {
+        professionalTitle: detailsRow?.professional_title ?? '',
+        professionalSummary: detailsRow?.professional_summary ?? '',
+      };
 
-    // 2. Load Skills
-    const skillRows = await db.getAllAsync<SkillRow>(
-      'SELECT id, name, category FROM skills ORDER BY created_at ASC;'
-    );
-    const skills: Skill[] = skillRows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      category: r.category as SkillCategory,
-    }));
+      // 2. Load Skills
+      const skillRows = await db.getAllAsync<SkillRow>(
+        'SELECT id, name, category FROM skills ORDER BY created_at ASC;'
+      );
+      const skills: Skill[] = skillRows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        category: r.category as SkillCategory,
+      }));
 
-    // 3. Load Experiences
-    const expRows = await db.getAllAsync<ExperienceRow>(
-      'SELECT id, company, job_title, location, start_date, end_date, currently_working, description, technologies FROM experiences ORDER BY created_at DESC;'
-    );
-    const experience: Experience[] = expRows.map((r) => ({
-      id: r.id,
-      company: r.company,
-      jobTitle: r.job_title,
-      location: r.location,
-      startDate: r.start_date,
-      endDate: r.end_date,
-      currentlyWorking: r.currently_working === 1,
-      description: r.description,
-      technologies: r.technologies,
-    }));
+      // 3. Load Experiences
+      const expRows = await db.getAllAsync<ExperienceRow>(
+        'SELECT id, company, job_title, location, start_date, end_date, currently_working, description, technologies FROM experiences ORDER BY created_at DESC;'
+      );
+      const experience: Experience[] = expRows.map((r) => ({
+        id: r.id,
+        company: r.company,
+        jobTitle: r.job_title,
+        location: r.location,
+        startDate: r.start_date,
+        endDate: r.end_date,
+        currentlyWorking: r.currently_working === 1,
+        description: r.description,
+        technologies: r.technologies,
+      }));
 
-    // 4. Load Projects
-    const projRows = await db.getAllAsync<ProjectRow>(
-      'SELECT id, project_name, description, project_type_or_domain, technologies, features_or_work_done, my_contribution FROM projects ORDER BY created_at DESC;'
-    );
-    const projects: Project[] = projRows.map((r) => ({
-      id: r.id,
-      projectName: r.project_name,
-      description: r.description,
-      projectTypeOrDomain: r.project_type_or_domain,
-      technologies: r.technologies,
-      featuresOrWorkDone: r.features_or_work_done,
-      myContribution: r.my_contribution,
-    }));
+      // 4. Load Projects
+      const projRows = await db.getAllAsync<ProjectRow>(
+        'SELECT id, project_name, description, project_type_or_domain, technologies, features_or_work_done, my_contribution FROM projects ORDER BY created_at DESC;'
+      );
+      const projects: Project[] = projRows.map((r) => ({
+        id: r.id,
+        projectName: r.project_name,
+        description: r.description,
+        projectTypeOrDomain: r.project_type_or_domain,
+        technologies: r.technologies,
+        featuresOrWorkDone: r.features_or_work_done,
+        myContribution: r.my_contribution,
+      }));
 
-    // 5. Load Education
-    const eduRows = await db.getAllAsync<EducationRow>(
-      'SELECT id, degree, institution, location, start_date, end_date, description FROM education ORDER BY created_at DESC;'
-    );
-    const education: Education[] = eduRows.map((r) => ({
-      id: r.id,
-      degree: r.degree,
-      institution: r.institution,
-      location: r.location,
-      startDate: r.start_date,
-      endDate: r.end_date,
-      description: r.description,
-    }));
+      // 5. Load Education
+      const eduRows = await db.getAllAsync<EducationRow>(
+        'SELECT id, degree, institution, location, start_date, end_date, description FROM education ORDER BY created_at DESC;'
+      );
+      const education: Education[] = eduRows.map((r) => ({
+        id: r.id,
+        degree: r.degree,
+        institution: r.institution,
+        location: r.location,
+        startDate: r.start_date,
+        endDate: r.end_date,
+        description: r.description,
+      }));
 
-    // 6. Load Certifications
-    const certRows = await db.getAllAsync<CertificationRow>(
-      'SELECT id, name, issuing_organization, issue_date, credential_id, credential_url FROM certifications ORDER BY created_at DESC;'
-    );
-    const certifications: Certification[] = certRows.map((r) => ({
-      id: r.id,
-      name: r.name,
-      issuingOrganization: r.issuing_organization,
-      issueDate: r.issue_date,
-      credentialId: r.credential_id,
-      credentialUrl: r.credential_url,
-    }));
+      // 6. Load Certifications
+      const certRows = await db.getAllAsync<CertificationRow>(
+        'SELECT id, name, issuing_organization, issue_date, credential_id, credential_url FROM certifications ORDER BY created_at DESC;'
+      );
+      const certifications: Certification[] = certRows.map((r) => ({
+        id: r.id,
+        name: r.name,
+        issuingOrganization: r.issuing_organization,
+        issueDate: r.issue_date,
+        credentialId: r.credential_id,
+        credentialUrl: r.credential_url,
+      }));
 
-    return {
-      personalDetails,
-      professionalInfo,
-      skills,
-      experience,
-      projects,
-      education,
-      certifications,
-    };
+      return {
+        personalDetails,
+        professionalInfo,
+        skills,
+        experience,
+        projects,
+        education,
+        certifications,
+      };
+    } catch (err: any) {
+      await errorLogger.logError('profileRepository.getProfile', err);
+      return INITIAL_PROFILE;
+    }
   },
 
   /**

@@ -1,77 +1,7 @@
 import { apiKeyRepository } from '@/database/repositories/apiKeyRepository';
 import { settingsRepository } from '@/database/repositories/settingsRepository';
-
-const DEFAULT_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.5-pro',
-  'gemini-1.5-flash',
-  'gemini-1.5-pro',
-  'gemini-3.6-flash',
-  'gemini-3.5-flash-lite',
-];
-
-let cachedActiveModels: string[] | null = null;
-let lastDiscoveryTime = 0;
-
-async function discoverActiveModels(apiKey: string): Promise<string[]> {
-  const now = Date.now();
-  if (cachedActiveModels && cachedActiveModels.length > 0 && now - lastDiscoveryTime < 1000 * 60 * 30) {
-    return cachedActiveModels;
-  }
-
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 6000);
-
-    const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal,
-      }
-    );
-
-    clearTimeout(timer);
-
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data.models)) {
-        const supported = data.models
-          .filter(
-            (m: any) =>
-              Array.isArray(m.supportedGenerationMethods) &&
-              m.supportedGenerationMethods.includes('generateContent')
-          )
-          .map((m: any) => m.name.replace(/^models\//, ''));
-
-        // Rank models: gemini-3.6-flash, gemini-3.5-flash-lite, gemini-3.7-flash first
-        const priorityOrder = [
-          'gemini-3.6-flash',
-          'gemini-3.5-flash-lite',
-          'gemini-3.7-flash',
-          'gemini-3.5-flash',
-          'gemini-3.1-pro-preview',
-        ];
-
-        const sorted = [
-          ...priorityOrder.filter((m: string) => supported.includes(m)),
-          ...supported.filter((m: string) => !priorityOrder.includes(m)),
-        ];
-
-        if (sorted.length > 0) {
-          cachedActiveModels = sorted;
-          lastDiscoveryTime = now;
-          return sorted;
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('Dynamic Gemini model discovery fallback:', err);
-  }
-
-  return DEFAULT_MODELS;
-}
+import { errorLogger } from '@/services/logging/errorLogger';
+import { OFFICIAL_GEMINI_MODELS } from '@/database/seeders/modelSeeder';
 
 export interface GeminiRequestOptions {
   systemInstruction?: string;
@@ -109,70 +39,205 @@ export class GeminiError extends Error {
   }
 }
 
+export interface ModelDiagnosticResult {
+  modelId: string;
+  displayName: string;
+  status: 'ok' | 'rate_limited' | 'credits_depleted' | 'auth_error' | 'not_found' | 'error';
+  latencyMs: number;
+  message: string;
+}
+
+export interface ApiKeyDiagnosticReport {
+  testedKey: string;
+  overallStatus: 'all_ok' | 'some_ok' | 'rate_limited' | 'auth_failed' | 'failed';
+  optimalModel: string | null;
+  results: ModelDiagnosticResult[];
+}
+
 export const geminiClient = {
   /**
-   * Sends a structured JSON prompt to Gemini with dynamic model discovery and automatic fallback.
+   * Diagnoses an API key across available models with ultra-minimal token usage (<10 tokens).
+   */
+  async diagnoseApiKey(
+    apiKey: string,
+    candidateModels?: string[]
+  ): Promise<ApiKeyDiagnosticReport> {
+    if (!apiKey || !apiKey.trim()) {
+      throw new GeminiError('API Key cannot be empty.', 'MISSING_API_KEY');
+    }
+
+    const key = apiKey.trim();
+    let modelsToTest = candidateModels;
+
+    if (!modelsToTest || modelsToTest.length === 0) {
+      try {
+        const allDbModels = await apiKeyRepository.getAllModels();
+        modelsToTest = allDbModels.map((m) => m.modelId);
+      } catch {
+        modelsToTest = OFFICIAL_GEMINI_MODELS.map((m) => m.modelId);
+      }
+    }
+
+    if (!modelsToTest || modelsToTest.length === 0) {
+      modelsToTest = OFFICIAL_GEMINI_MODELS.map((m) => m.modelId);
+    }
+
+    const results: ModelDiagnosticResult[] = [];
+    let optimalModel: string | null = null;
+
+    for (const model of modelsToTest) {
+      const startTime = Date.now();
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+
+      const requestBody = {
+        contents: [{ parts: [{ text: '{"p":1}' }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          maxOutputTokens: 10,
+          temperature: 0.1,
+        },
+      };
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+      try {
+        const response = await fetch(`${endpoint}?key=${encodeURIComponent(key)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+        const latencyMs = Date.now() - startTime;
+
+        if (response.ok) {
+          results.push({
+            modelId: model,
+            displayName: model,
+            status: 'ok',
+            latencyMs,
+            message: `Active (${latencyMs}ms)`,
+          });
+          if (!optimalModel) {
+            optimalModel = model;
+          }
+        } else {
+          let errorJson: any = null;
+          try {
+            errorJson = await response.json();
+          } catch {}
+
+          const rawMsg = errorJson?.error?.message || `HTTP ${response.status}`;
+
+          if (rawMsg.includes('prepayment credits are depleted')) {
+            results.push({
+              modelId: model,
+              displayName: model,
+              status: 'credits_depleted',
+              latencyMs,
+              message: 'Google AI credits depleted',
+            });
+          } else if (response.status === 429 || rawMsg.includes('quota') || rawMsg.includes('RESOURCE_EXHAUSTED')) {
+            results.push({
+              modelId: model,
+              displayName: model,
+              status: 'rate_limited',
+              latencyMs,
+              message: 'Quota / Rate limit exceeded',
+            });
+          } else if (response.status === 401 || response.status === 403 || rawMsg.includes('API_KEY_INVALID')) {
+            results.push({
+              modelId: model,
+              displayName: model,
+              status: 'auth_error',
+              latencyMs,
+              message: 'Invalid API key or unauthorized',
+            });
+          } else if (response.status === 404 || rawMsg.includes('not found')) {
+            results.push({
+              modelId: model,
+              displayName: model,
+              status: 'not_found',
+              latencyMs,
+              message: 'Model unsupported for this key tier',
+            });
+          } else {
+            results.push({
+              modelId: model,
+              displayName: model,
+              status: 'error',
+              latencyMs,
+              message: rawMsg,
+            });
+          }
+        }
+      } catch (reqErr: any) {
+        clearTimeout(timeoutId);
+        const latencyMs = Date.now() - startTime;
+        results.push({
+          modelId: model,
+          displayName: model,
+          status: 'error',
+          latencyMs,
+          message: reqErr.name === 'AbortError' ? 'Timed out (8s)' : reqErr.message || 'Network error',
+        });
+      }
+    }
+
+    const hasAuthError = results.some((r) => r.status === 'auth_error');
+    const okCount = results.filter((r) => r.status === 'ok').length;
+
+    let overallStatus: ApiKeyDiagnosticReport['overallStatus'] = 'failed';
+    if (hasAuthError && okCount === 0) {
+      overallStatus = 'auth_failed';
+    } else if (okCount === results.length && okCount > 0) {
+      overallStatus = 'all_ok';
+    } else if (okCount > 0) {
+      overallStatus = 'some_ok';
+    } else if (results.some((r) => r.status === 'rate_limited')) {
+      overallStatus = 'rate_limited';
+    }
+
+    return {
+      testedKey: key,
+      overallStatus,
+      optimalModel,
+      results,
+    };
+  },
+
+  /**
+   * Sends a structured JSON prompt directly to Gemini using the active API key and configured model.
    */
   async generateJson<T>(prompt: string, options: GeminiRequestOptions = {}): Promise<T> {
     const activeKeyItem = await apiKeyRepository.getActiveApiKey();
     const apiKey = activeKeyItem?.apiKey || (await settingsRepository.getGeminiApiKey());
 
-    if (!apiKey) {
+    if (!apiKey || !apiKey.trim()) {
       throw new GeminiError(
-        'Gemini API Key is not configured. Please add your API key in Settings > API Keys.',
+        'Gemini API Key is not configured. Please add your API key in Settings > AI & API Keys.',
         'MISSING_API_KEY'
       );
     }
 
-    const preferredModel =
-      options.model ||
-      activeKeyItem?.defaultModel ||
-      (await settingsRepository.getSetting('gemini_model')) ||
-      process.env.EXPO_PUBLIC_GEMINI_MODEL;
+    // Resolve target model directly from active key or system default
+    let targetModel = options.model || activeKeyItem?.defaultModel;
 
-    // Load available models dynamically from database
-    let dbModels: string[] = [];
-    try {
-      const allDbModels = await apiKeyRepository.getAllModels();
-      dbModels = allDbModels.map((m) => m.modelId);
-    } catch {}
-
-    let candidateModels: string[];
-    if (options.model) {
-      candidateModels = [options.model];
-    } else if (preferredModel && preferredModel.trim()) {
-      const allPool = Array.from(new Set([...dbModels, ...DEFAULT_MODELS]));
-      candidateModels = [preferredModel.trim(), ...allPool.filter((m) => m !== preferredModel.trim())];
-    } else {
-      const discovered = await discoverActiveModels(apiKey);
-      candidateModels = discovered.length > 0 ? discovered : DEFAULT_MODELS;
-    }
-
-    let lastError: any = null;
-
-    for (const model of candidateModels) {
+    if (!targetModel) {
       try {
-        return await this.executeModelRequest<T>(model, apiKey, prompt, options);
-      } catch (err: any) {
-        lastError = err;
-        const msg = err.message || '';
-        const isModelUnavailable =
-          msg.includes('no longer available') ||
-          msg.includes('not found') ||
-          msg.includes('unsupported') ||
-          msg.includes('404') ||
-          msg.includes('deprecated');
-
-        if (isModelUnavailable && candidateModels.indexOf(model) < candidateModels.length - 1) {
-          console.warn(`Gemini model ${model} unavailable, trying next candidate...`);
-          continue;
-        }
-
-        throw err;
-      }
+        const allModels = await apiKeyRepository.getAllModels();
+        const defaultDbModel = allModels.find((m) => m.isDefault);
+        targetModel = defaultDbModel?.modelId || allModels[0]?.modelId;
+      } catch {}
     }
 
-    throw lastError || new GeminiError('Failed to generate response from Gemini API.', 'UNKNOWN');
+    if (!targetModel) {
+      targetModel = (await settingsRepository.getSetting('gemini_model')) || 'gemini-2.5-flash';
+    }
+
+    return await this.executeModelRequest<T>(targetModel.trim(), apiKey.trim(), prompt, options);
   },
 
   /**
@@ -278,6 +343,11 @@ export const geminiClient = {
       }
     } catch (error: any) {
       clearTimeout(timeoutId);
+
+      await errorLogger.logError('geminiClient.executeModelRequest', error, {
+        model,
+        endpoint,
+      });
 
       if (error instanceof GeminiError) {
         throw error;

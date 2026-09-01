@@ -1,3 +1,4 @@
+declare const process: any;
 import { OWNER_PROFILE } from '../src/data/ownerProfileData';
 
 let passed = 0;

@@ -23,6 +23,8 @@ import { AppDialog, AppToast } from '@/context/DialogContext';
 import { jobRepository } from '@/database/repositories/jobRepository';
 import { profileRepository } from '@/database/repositories/profileRepository';
 import { resumeRepository } from '@/database/repositories/resumeRepository';
+import { jdAnalyzer } from '@/services/gemini/jdAnalyzer';
+import { errorLogger } from '@/services/logging/errorLogger';
 import { CompilerError, latexCompiler } from '@/services/latex/compiler';
 import { latexRenderer } from '@/services/latex/latexRenderer';
 import { localPdfGenerator } from '@/services/pdf/pdfGenerator';
@@ -46,8 +48,6 @@ export default function ResumePreviewScreen() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [generationStep, setGenerationStep] = useState<string>('');
-  const [isCopied, setIsCopied] = useState(false);
-  const [showLatexCode, setShowLatexCode] = useState(false);
 
   const loadData = async () => {
     if (!id) return;
@@ -149,18 +149,55 @@ export default function ResumePreviewScreen() {
       setIsGenerating(true);
 
       const profile = await profileRepository.getProfile();
-      const matchResult =
-        job.matchResult ||
-        (job.analysis ? matchingEngine.match(profile, job.analysis) : null);
+      let analysis = job.analysis;
 
-      if (!job.analysis || !matchResult) {
-        throw new Error('Job description has not been analyzed yet.');
+      // If JD analysis is missing, analyze it on the fly or build structured analysis
+      if (!analysis) {
+        setGenerationStep('Analyzing job requirements...');
+        try {
+          if (job.jobDescription && job.jobDescription.trim()) {
+            analysis = await jdAnalyzer.analyze(job.jobDescription);
+          }
+        } catch (analyzerErr) {
+          await errorLogger.logError('handleGenerateNewVersion.jdAnalyzer', analyzerErr, { jobId: job.id });
+          console.warn('JD analyzer fallback to basic structure:', analyzerErr);
+        }
+
+        // Fallback: build valid JobAnalysis from existing job metadata
+        if (!analysis) {
+          analysis = {
+            company: job.company || 'Company',
+            role: job.role || 'Software Engineer',
+            location: job.location || null,
+            experienceRequirement: null,
+            educationRequirement: null,
+            salary: job.salary || null,
+            employmentType: null,
+            workMode: null,
+            applicationEmail: job.applicationEmail || null,
+            applicationUrl: job.sourceUrl || null,
+            requiredSkills: [],
+            preferredSkills: [],
+            responsibilities: [],
+            otherRequirements: [],
+            analyzedAt: new Date().toISOString(),
+          };
+        }
+
+        await jobRepository.updateJob(job.id, {
+          analysisStatus: 'Analyzed',
+          analysis,
+        });
+        setJob((prev) => (prev ? { ...prev, analysis, analysisStatus: 'Analyzed' } : null));
       }
+
+      const matchResult = matchingEngine.match(profile, analysis);
+      await jobRepository.updateJobMatch(job.id, matchResult);
 
       setGenerationStep('Tailoring resume...');
       const tailored = resumeCustomizer.customize(
         profile,
-        job.analysis,
+        analysis,
         matchResult,
         job.id
       );
@@ -183,13 +220,30 @@ export default function ResumePreviewScreen() {
         'master-v1'
       );
 
-      setGenerationStep('Compiling PDF document...');
+      setGenerationStep('Compiling PDF document on-device...');
       try {
-        const { pdfPath } = await latexCompiler.compileToPdf(
-          latexSource,
-          job.id,
-          newVersion.id
-        );
+        let pdfPath: string | null = null;
+        try {
+          const res = await localPdfGenerator.generatePdfFromResume(
+            tailored,
+            job.company || job.id,
+            newVersion.versionNumber
+          );
+          pdfPath = res.pdfPath;
+        } catch (localErr) {
+          await errorLogger.logError('handleGenerateNewVersion.localPdfGenerator', localErr, { jobId: job.id });
+          console.warn('Local PDF generation fallback:', localErr);
+        }
+
+        if (!pdfPath) {
+          const res = await latexCompiler.compileToPdf(
+            latexSource,
+            job.id,
+            newVersion.id,
+            tailored
+          );
+          pdfPath = res.pdfPath;
+        }
 
         await resumeRepository.updateResumePdf(newVersion.id, pdfPath, 'Generated', null);
         newVersion.pdfPath = pdfPath;
@@ -252,35 +306,45 @@ export default function ResumePreviewScreen() {
         }
       }
 
-      // If PDF file does not exist on disk, generate it on-demand
+      // If PDF file does not exist on disk, generate it 100% on-device
       if (!targetPath) {
-        AppToast.show('Generating PDF document...', 'info');
+        AppToast.show('Generating PDF document on-device...', 'info');
 
-        let compiled: { pdfPath: string; sizeBytes: number } | null = null;
-
-        if (customizedResume) {
+        let resumeDataToRender = customizedResume;
+        if (!resumeDataToRender && selectedVersion.resumeJson) {
           try {
-            compiled = await localPdfGenerator.generatePdfFromResume(
-              customizedResume,
-              job?.company || 'hireFlow',
-              selectedVersion.versionNumber
-            );
-          } catch (localErr) {
-            console.warn('Local PDF generation fallback:', localErr);
-          }
+            resumeDataToRender = JSON.parse(selectedVersion.resumeJson) as CustomizedResume;
+          } catch {}
         }
 
-        if (!compiled && selectedVersion.latexSource) {
-          compiled = await latexCompiler.compileToPdf(
-            selectedVersion.latexSource,
-            job?.company || 'hireFlow',
-            selectedVersion.id
-          );
+        if (!resumeDataToRender) {
+          const profile = await profileRepository.getProfile();
+          const analysis = job?.analysis || {
+            company: job?.company || 'Company',
+            role: job?.role || 'Software Engineer',
+            location: job?.location || null,
+            experienceRequirement: null,
+            educationRequirement: null,
+            salary: job?.salary || null,
+            employmentType: null,
+            workMode: null,
+            applicationEmail: job?.applicationEmail || null,
+            applicationUrl: job?.sourceUrl || null,
+            requiredSkills: [],
+            preferredSkills: [],
+            responsibilities: [],
+            otherRequirements: [],
+            analyzedAt: new Date().toISOString(),
+          };
+          const match = job?.matchResult || matchingEngine.match(profile, analysis);
+          resumeDataToRender = resumeCustomizer.customize(profile, analysis, match, job?.id || 'hireFlow');
         }
 
-        if (!compiled) {
-          throw new Error('Could not generate PDF document.');
-        }
+        const compiled = await localPdfGenerator.generatePdfFromResume(
+          resumeDataToRender,
+          job?.company || 'hireFlow',
+          selectedVersion.versionNumber
+        );
 
         targetPath = compiled.pdfPath;
 
@@ -309,24 +373,15 @@ export default function ResumePreviewScreen() {
         UTI: 'com.adobe.pdf',
       });
     } catch (error: any) {
-      console.error('Error compiling/opening PDF:', error);
+      await errorLogger.logError('ResumePreview.handleOpenWith', error, {
+        jobId: job?.id,
+        versionId: selectedVersion?.id,
+      });
+      console.error('Error opening PDF:', error);
       AppDialog.error(
-        'PDF Compilation Failed',
-        error.message || 'Could not compile PDF document. Please verify internet connection.'
+        'PDF Generation Failed',
+        error.message || 'Could not generate PDF on device.'
       );
-    }
-  };
-
-  const handleCopyLatex = async () => {
-    if (!selectedVersion) return;
-    try {
-      await Clipboard.setStringAsync(selectedVersion.latexSource);
-      setIsCopied(true);
-      AppToast.show('LaTeX code copied to clipboard', 'info');
-      setTimeout(() => setIsCopied(false), 2500);
-    } catch (error) {
-      console.error('Failed to copy to clipboard:', error);
-      AppDialog.error('Copy Failed', 'Failed to copy LaTeX code.');
     }
   };
 
@@ -414,54 +469,12 @@ export default function ResumePreviewScreen() {
                 onPress={handleApproveAndContinue}
                 style={styles.primaryApproveBtn}
               />
-              <View style={styles.subActionRow}>
-                <SecondaryButton
-                  title="Open With"
-                  icon="external-link"
-                  size="sm"
-                  onPress={handleOpenWith}
-                  style={{ flex: 1 }}
-                />
-                <SecondaryButton
-                  title={showLatexCode ? 'Hide LaTeX' : 'View LaTeX'}
-                  icon="code"
-                  size="sm"
-                  onPress={() => setShowLatexCode(!showLatexCode)}
-                  style={{ flex: 1 }}
-                />
-              </View>
-
-              {/* LaTeX Source Inspector (Action-Adjacent) */}
-              {showLatexCode && selectedVersion && (
-                <View style={[styles.codeCardContainer, { marginTop: Spacing.md }]}>
-                  <View style={styles.latexHeaderRow}>
-                    <Text style={Typography.itemTitle}>LaTeX Source (v{selectedVersion.versionNumber})</Text>
-                    <TouchableOpacity
-                      style={[styles.copyBtn, isCopied && styles.copyBtnSuccess]}
-                      onPress={handleCopyLatex}>
-                      <Feather
-                        name={isCopied ? 'check' : 'copy'}
-                        size={12}
-                        color={isCopied ? Colors.successText : Colors.textSecondary}
-                      />
-                      <Text style={[styles.copyBtnText, isCopied && styles.copyBtnTextSuccess]}>
-                        {isCopied ? 'Copied' : 'Copy'}
-                      </Text>
-                    </TouchableOpacity>
-                  </View>
-
-                  <View style={styles.codeBox}>
-                    <ScrollView
-                      nestedScrollEnabled
-                      style={styles.codeScroll}
-                      contentContainerStyle={styles.codeScrollContent}>
-                      <Text style={styles.codeText} selectable>
-                        {selectedVersion.latexSource}
-                      </Text>
-                    </ScrollView>
-                  </View>
-                </View>
-              )}
+              <SecondaryButton
+                title="Open With Document Viewer"
+                icon="external-link"
+                size="sm"
+                onPress={handleOpenWith}
+              />
             </View>
           ) : (
             <View style={styles.compilingBox}>

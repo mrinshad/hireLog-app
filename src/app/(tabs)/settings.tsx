@@ -176,10 +176,6 @@ export default function SettingsScreen() {
                 <Feather name="chevron-right" size={20} color={Colors.primary} />
               </View>
             </TouchableOpacity>
-
-            <Text style={[Typography.caption, { marginTop: 8 }]}>
-              Protected by Android biometric / screen lock credentials. Configure multiple API keys, assign default models, and register custom models.
-            </Text>
           </Card>
 
           {/* Profile Management / Seeding */}

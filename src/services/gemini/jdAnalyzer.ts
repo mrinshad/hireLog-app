@@ -1,4 +1,5 @@
 import { geminiClient, GeminiError } from './client';
+import { errorLogger } from '@/services/logging/errorLogger';
 import { JobAnalysis } from '@/types/job';
 
 const JD_ANALYSIS_SYSTEM_PROMPT = `
@@ -92,13 +93,20 @@ export const jdAnalyzer = {
       throw new GeminiError('Cannot analyze an empty Job Description.', 'INVALID_RESPONSE');
     }
 
-    const userPrompt = `Please analyze the following Job Description according to your system instructions:\n\n---\n${trimmedJD}\n---`;
+    try {
+      const userPrompt = `Please analyze the following Job Description according to your system instructions:\n\n---\n${trimmedJD}\n---`;
 
-    const rawResult = await geminiClient.generateJson<any>(userPrompt, {
-      systemInstruction: JD_ANALYSIS_SYSTEM_PROMPT,
-      temperature: 0.1,
-    });
+      const rawResult = await geminiClient.generateJson<any>(userPrompt, {
+        systemInstruction: JD_ANALYSIS_SYSTEM_PROMPT,
+        temperature: 0.1,
+      });
 
-    return validateAndSanitizeAnalysis(rawResult);
+      return validateAndSanitizeAnalysis(rawResult);
+    } catch (err: any) {
+      await errorLogger.logError('jdAnalyzer.analyze', err, {
+        jdLength: trimmedJD.length,
+      });
+      throw err;
+    }
   },
 };
