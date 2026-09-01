@@ -23,12 +23,12 @@ export function generateResumeHtml(resume: CustomizedResume): string {
   const p = resume.personalDetails || {};
 
   const contactItems: string[] = [];
-  if (p.phone) contactItems.push(`<span>${escapeHtml(p.phone)}</span>`);
-  if (p.email) contactItems.push(`<span>${escapeHtml(p.email)}</span>`);
-  if (p.location) contactItems.push(`<span>${escapeHtml(p.location)}</span>`);
-  if (p.linkedIn) contactItems.push(`<a href="${escapeHtml(p.linkedIn)}">LinkedIn</a>`);
-  if (p.github) contactItems.push(`<a href="${escapeHtml(p.github)}">GitHub</a>`);
-  if (p.portfolio) contactItems.push(`<a href="${escapeHtml(p.portfolio)}">Portfolio</a>`);
+  if (p.phone) contactItems.push(escapeHtml(p.phone));
+  if (p.email) contactItems.push(escapeHtml(p.email));
+  if (p.location) contactItems.push(escapeHtml(p.location));
+  if (p.linkedIn) contactItems.push('LinkedIn');
+  if (p.github) contactItems.push('GitHub');
+  if (p.portfolio) contactItems.push('Portfolio');
 
   // Group skills by category
   const skillsByCategory = (resume.skills || []).reduce<Record<string, string[]>>((acc, s) => {
@@ -48,7 +48,7 @@ export function generateResumeHtml(resume: CustomizedResume): string {
   <style>
     @page {
       size: A4;
-      margin: 16mm 14mm;
+      margin: 14mm 14mm;
     }
     * {
       box-sizing: border-box;
@@ -59,106 +59,139 @@ export function generateResumeHtml(resume: CustomizedResume): string {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       font-size: 9.5pt;
       line-height: 1.45;
-      color: #1a202c;
+      color: #1E293B;
       background-color: #ffffff;
-      padding: 16px;
+      padding: 4px;
     }
     .header {
       text-align: center;
       margin-bottom: 12px;
-      padding-bottom: 8px;
-      border-bottom: 1.5px solid #2b6cb0;
     }
     .name {
-      font-size: 19pt;
-      font-weight: 700;
-      color: #1a202c;
-      letter-spacing: -0.5px;
-      margin-bottom: 2px;
-    }
-    .title {
-      font-size: 10.5pt;
-      font-weight: 600;
-      color: #2b6cb0;
-      margin-bottom: 4px;
+      font-size: 20pt;
+      font-weight: 800;
+      color: #0F172A;
+      letter-spacing: -0.3px;
+      margin-bottom: 3px;
     }
     .contacts {
-      font-size: 8.5pt;
-      color: #4a5568;
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 8px;
-    }
-    .contacts a {
-      color: #2b6cb0;
-      text-decoration: none;
+      font-size: 9.5pt;
+      color: #475569;
     }
     .section {
-      margin-bottom: 11px;
+      margin-bottom: 12px;
     }
     .section-title {
-      font-size: 9.5pt;
+      font-size: 10.5pt;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.8px;
-      color: #2b6cb0;
-      border-bottom: 1px solid #e2e8f0;
-      padding-bottom: 2px;
-      margin-bottom: 5px;
+      color: #0F172A;
+      margin-bottom: 2px;
     }
-    .summary-text {
-      font-size: 8.8pt;
-      color: #2d3748;
-      text-align: justify;
+    .heading-divider {
+      height: 1px;
+      background-color: #0F172A;
+      margin-bottom: 6px;
     }
-    .item {
-      margin-bottom: 7px;
+    .body-text {
+      font-size: 9.5pt;
+      line-height: 1.45;
+      color: #1E293B;
     }
-    .item-header {
+    .skills-row {
+      margin-bottom: 3px;
+      font-size: 9.5pt;
+      color: #334155;
+      line-height: 1.4;
+    }
+    .skill-cat {
+      font-weight: 700;
+      color: #0F172A;
+    }
+    .item-block {
+      margin-bottom: 8px;
+    }
+    .item-top-row {
       display: flex;
       justify-content: space-between;
       align-items: baseline;
-      margin-bottom: 1px;
+      gap: 8px;
     }
-    .item-title {
-      font-size: 9.2pt;
+    .item-primary-title {
+      font-size: 10pt;
       font-weight: 700;
-      color: #1a202c;
-    }
-    .item-subtitle {
-      font-size: 8.8pt;
-      font-weight: 600;
-      color: #4a5568;
+      color: #0F172A;
+      flex: 1;
     }
     .item-date {
-      font-size: 8.5pt;
-      color: #718096;
+      font-size: 9pt;
+      color: #64748B;
       font-weight: 500;
       white-space: nowrap;
     }
-    .item-location {
-      font-size: 8.5pt;
-      color: #718096;
-      font-style: italic;
-    }
-    ul {
-      margin-left: 14px;
-      margin-top: 2px;
-    }
-    li {
-      font-size: 8.5pt;
-      color: #2d3748;
+    .item-sub-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 1px;
       margin-bottom: 2px;
     }
-    .skills-category {
-      margin-bottom: 3px;
-      font-size: 8.5pt;
-      color: #2d3748;
+    .item-company {
+      font-size: 9.5pt;
+      font-style: italic;
+      color: #334155;
     }
-    .skills-label {
-      font-weight: 700;
-      color: #1a202c;
+    .item-location {
+      font-size: 9pt;
+      color: #64748B;
+    }
+    .proj-domain {
+      font-size: 9pt;
+      font-style: italic;
+      color: #475569;
+      font-weight: normal;
+      margin-left: 4px;
+    }
+    .bullet-list {
+      margin-top: 2px;
+    }
+    .bullet-row {
+      display: flex;
+      align-items: flex-start;
+      margin-top: 2px;
+      gap: 6px;
+    }
+    .bullet-dot {
+      font-size: 10pt;
+      line-height: 1.35;
+      color: #0F172A;
+    }
+    .bullet-text {
+      font-size: 9pt;
+      line-height: 1.35;
+      color: #1E293B;
+      flex: 1;
+    }
+    .tech-text {
+      font-size: 9pt;
+      color: #475569;
+      margin-top: 3px;
+    }
+    .cert-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .cert-name {
+      font-size: 9.5pt;
+      font-weight: 600;
+      color: #0F172A;
+    }
+    .cert-issuer {
+      font-size: 9pt;
+      color: #64748B;
     }
   </style>
 </head>
@@ -166,20 +199,18 @@ export function generateResumeHtml(resume: CustomizedResume): string {
 
   <!-- HEADER -->
   <div class="header">
-    <div class="name">${escapeHtml(p.fullName || 'Candidate')}</div>
-    ${resume.targetRole ? `<div class="title">${escapeHtml(resume.targetRole)}</div>` : ''}
-    <div class="contacts">
-      ${contactItems.join(' &bull; ')}
-    </div>
+    <div class="name">${escapeHtml(p.fullName || 'Candidate Name')}</div>
+    ${contactItems.length > 0 ? `<div class="contacts">${contactItems.join(' &nbsp;&bull;&nbsp; ')}</div>` : ''}
   </div>
 
   <!-- SUMMARY -->
   ${
-    resume.summary
+    resume.summary && resume.summary.trim().length > 0
       ? `
   <div class="section">
     <div class="section-title">Summary</div>
-    <div class="summary-text">${escapeHtml(resume.summary)}</div>
+    <div class="heading-divider"></div>
+    <div class="body-text">${escapeHtml(resume.summary)}</div>
   </div>`
       : ''
   }
@@ -190,12 +221,13 @@ export function generateResumeHtml(resume: CustomizedResume): string {
       ? `
   <div class="section">
     <div class="section-title">Technical Skills</div>
+    <div class="heading-divider"></div>
     ${Object.entries(skillsByCategory)
       .map(
         ([category, skillNames]) => `
-      <div class="skills-category">
-        <span class="skills-label">${escapeHtml(category)}:</span>
-        ${escapeHtml(skillNames.join(', '))}
+      <div class="skills-row">
+        <span class="skill-cat">${escapeHtml(category)}: </span>
+        <span>${escapeHtml(skillNames.join(', '))}</span>
       </div>`
       )
       .join('')}
@@ -209,25 +241,37 @@ export function generateResumeHtml(resume: CustomizedResume): string {
       ? `
   <div class="section">
     <div class="section-title">Experience</div>
+    <div class="heading-divider"></div>
     ${resume.experience
       .map(
         (exp) => `
-    <div class="item">
-      <div class="item-header">
-        <span class="item-title">${escapeHtml(exp.jobTitle)}</span>
-        <span class="item-date">${escapeHtml([exp.startDate, exp.endDate].filter(Boolean).join(' &ndash; '))}</span>
+    <div class="item-block">
+      <div class="item-top-row">
+        <span class="item-primary-title">${escapeHtml(exp.jobTitle)}</span>
+        <span class="item-date">${escapeHtml([exp.startDate, exp.endDate].filter(Boolean).join(' – '))}</span>
       </div>
-      <div class="item-header">
-        <span class="item-subtitle">${escapeHtml(exp.company)}</span>
+      <div class="item-sub-row">
+        <span class="item-company">${escapeHtml(exp.company)}</span>
         ${exp.location ? `<span class="item-location">${escapeHtml(exp.location)}</span>` : ''}
       </div>
       ${
         exp.description
-          ? `<ul>${exp.description
+          ? `<div class="bullet-list">${exp.description
               .split('\n')
               .filter((line) => line.trim().length > 0)
-              .map((b) => `<li>${escapeHtml(b.trim())}</li>`)
-              .join('')}</ul>`
+              .map(
+                (line) => `
+            <div class="bullet-row">
+              <span class="bullet-dot">&bull;</span>
+              <span class="bullet-text">${escapeHtml(line.trim())}</span>
+            </div>`
+              )
+              .join('')}</div>`
+          : ''
+      }
+      ${
+        exp.technologies
+          ? `<div class="tech-text"><strong>Technologies: </strong>${escapeHtml(exp.technologies)}</div>`
           : ''
       }
     </div>`
@@ -243,23 +287,36 @@ export function generateResumeHtml(resume: CustomizedResume): string {
       ? `
   <div class="section">
     <div class="section-title">Projects</div>
+    <div class="heading-divider"></div>
     ${resume.projects
       .map(
         (proj) => `
-    <div class="item">
-      <div class="item-header">
-        <span class="item-title">${escapeHtml(proj.projectName)}</span>
-        ${proj.projectTypeOrDomain ? `<span class="item-location">${escapeHtml(proj.projectTypeOrDomain)}</span>` : ''}
+    <div class="item-block">
+      <div class="item-top-row">
+        <span class="item-primary-title">${escapeHtml(proj.projectName)}${proj.projectTypeOrDomain ? `<span class="proj-domain">| ${escapeHtml(proj.projectTypeOrDomain)}</span>` : ''}</span>
       </div>
+      ${proj.description ? `<div class="body-text">${escapeHtml(proj.description)}</div>` : ''}
       ${
-        proj.description || proj.featuresOrWorkDone
-          ? `<ul>${[proj.description, proj.featuresOrWorkDone]
-              .filter(Boolean)
-              .join('\n')
-              .split('\n')
-              .filter((line) => line.trim().length > 0)
-              .map((b) => `<li>${escapeHtml(b.trim())}</li>`)
-              .join('')}</ul>`
+        proj.featuresOrWorkDone
+          ? `
+      <div class="bullet-row">
+        <span class="bullet-dot">&bull;</span>
+        <span class="bullet-text">${escapeHtml(proj.featuresOrWorkDone)}</span>
+      </div>`
+          : ''
+      }
+      ${
+        proj.myContribution
+          ? `
+      <div class="bullet-row">
+        <span class="bullet-dot">&bull;</span>
+        <span class="bullet-text">${escapeHtml(proj.myContribution)}</span>
+      </div>`
+          : ''
+      }
+      ${
+        proj.technologies
+          ? `<div class="tech-text"><strong>Technologies: </strong>${escapeHtml(proj.technologies)}</div>`
           : ''
       }
     </div>`
@@ -275,16 +332,17 @@ export function generateResumeHtml(resume: CustomizedResume): string {
       ? `
   <div class="section">
     <div class="section-title">Education</div>
+    <div class="heading-divider"></div>
     ${resume.education
       .map(
         (edu) => `
-    <div class="item">
-      <div class="item-header">
-        <span class="item-title">${escapeHtml(edu.degree)}</span>
-        <span class="item-date">${escapeHtml([edu.startDate, edu.endDate].filter(Boolean).join(' &ndash; '))}</span>
+    <div class="item-block">
+      <div class="item-top-row">
+        <span class="item-primary-title">${escapeHtml(edu.institution)}</span>
+        <span class="item-date">${escapeHtml([edu.startDate, edu.endDate].filter(Boolean).join(' – '))}</span>
       </div>
-      <div class="item-header">
-        <span class="item-subtitle">${escapeHtml(edu.institution)}</span>
+      <div class="item-sub-row">
+        <span class="item-company">${escapeHtml(edu.degree)}</span>
         ${edu.location ? `<span class="item-location">${escapeHtml(edu.location)}</span>` : ''}
       </div>
     </div>`
@@ -300,15 +358,13 @@ export function generateResumeHtml(resume: CustomizedResume): string {
       ? `
   <div class="section">
     <div class="section-title">Certifications</div>
+    <div class="heading-divider"></div>
     ${resume.certifications
       .map(
         (cert) => `
-    <div class="item">
-      <div class="item-header">
-        <span class="item-title">${escapeHtml(cert.name)}</span>
-        <span class="item-date">${escapeHtml(cert.issueDate || '')}</span>
-      </div>
-      <div class="item-subtitle">${escapeHtml(cert.issuingOrganization)}</div>
+    <div class="cert-row">
+      <span class="cert-name">${escapeHtml(cert.name)}</span>
+      <span class="cert-issuer">${escapeHtml(cert.issuingOrganization)}${cert.issueDate ? ` (${escapeHtml(cert.issueDate)})` : ''}</span>
     </div>`
       )
       .join('')}
